@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/carlos-loya/water-quality-data-management/internal/events"
+	"github.com/carlos-loya/water-quality-data-management/internal/ingestion"
 	"github.com/carlos-loya/water-quality-data-management/internal/storage"
 )
 
@@ -296,6 +297,49 @@ func (h *handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, entries)
+}
+
+func (h *handler) importSampleResults(w http.ResponseWriter, r *http.Request) {
+	orgID, err := parseUUID(r.PathValue("org_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid org_id")
+		return
+	}
+
+	// Parse multipart form — 10 MB max
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing file field")
+		return
+	}
+	defer file.Close()
+
+	enteredByStr := r.FormValue("entered_by")
+	enteredBy, err := parseUUID(enteredByStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid or missing entered_by")
+		return
+	}
+
+	importer := ingestion.NewCSVImporter(h.queries)
+	result, err := importer.Import(r.Context(), file, orgID, enteredBy)
+	if err != nil {
+		slog.Error("csv import", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Publish audit events for each imported result
+	for _, sr := range result.Results {
+		h.publishResultEvent(r.Context(), events.SubjectSampleResultCreated, "insert", sr, nil)
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // publishResultEvent sends a change event for a sample result to NATS.

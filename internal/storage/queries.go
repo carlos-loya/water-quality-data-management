@@ -131,6 +131,40 @@ func (q *Queries) ListMonitoringLocations(ctx context.Context, facilityID uuid.U
 	return pgx.CollectRows(rows, pgx.RowToStructByName[MonitoringLocation])
 }
 
+// ListAllMonitoringLocations returns all monitoring locations across all facilities for an organization.
+func (q *Queries) ListAllMonitoringLocations(ctx context.Context, orgID uuid.UUID) ([]MonitoringLocation, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT ml.id, ml.facility_id, ml.name, ml.description, ml.location_type, ml.latitude, ml.longitude, ml.active, ml.created_at, ml.updated_at
+		FROM monitoring_locations ml
+		JOIN facilities f ON ml.facility_id = f.id
+		WHERE f.organization_id = $1
+		ORDER BY ml.name`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[MonitoringLocation])
+}
+
+// UnitOfMeasure represents a unit entry.
+type UnitOfMeasure struct {
+	ID   uuid.UUID `json:"id"`
+	Code string    `json:"code"`
+	Name string    `json:"name"`
+}
+
+// ListUnits returns all units of measure for an organization.
+func (q *Queries) ListUnits(ctx context.Context, orgID uuid.UUID) ([]UnitOfMeasure, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, code, name
+		FROM units_of_measure
+		WHERE organization_id = $1
+		ORDER BY code`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[UnitOfMeasure])
+}
+
 // ListParameters returns all parameters for an organization.
 func (q *Queries) ListParameters(ctx context.Context, orgID uuid.UUID) ([]Parameter, error) {
 	rows, err := q.pool.Query(ctx, `

@@ -1,0 +1,11 @@
+monitoring_location,parameter_code,collected_at,result_value,unit_code,notes
+CW-EFF,PH,2026-03-17 06:00,7.1,SU,morning reading
+CW-EFF,TURB,2026-03-17 06:00,0.19,NTU,
+CW-EFF,CL2FREE,2026-03-17 06:00,0.85,mg/L,
+WW-EFF,BOD5,2026-03-17 07:00,23.4,mg/L,
+WW-EFF,TSS,2026-03-17 07:00,17.2,mg/L,
+WW-EFF,NH3,2026-03-17 07:00,<0.1,mg/L,below detection
+CW-EFF,PH,2026-03-17 14:00,7.3,SU,afternoon reading
+INVALID-LOC,PH,2026-03-17 06:00,7.0,SU,should fail - bad location
+CW-EFF,BADPARAM,2026-03-17 06:00,1.0,mg/L,should fail - bad parameter
+CW-EFF,PH,not-a-date,7.0,SU,should fail - bad date
