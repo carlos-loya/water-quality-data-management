@@ -1,19 +1,24 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
+	"github.com/carlos-loya/water-quality-data-management/internal/events"
 	"github.com/carlos-loya/water-quality-data-management/internal/storage"
 )
 
 type handler struct {
 	queries *storage.Queries
+	bus     *events.Bus
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +137,6 @@ func (h *handler) createSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validation
 	if params.MonitoringLocationID == uuid.Nil {
 		writeError(w, http.StatusBadRequest, "monitoring_location_id is required")
 		return
@@ -167,7 +171,99 @@ func (h *handler) createSampleResult(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+
+	h.publishResultEvent(r.Context(), events.SubjectSampleResultCreated, "insert", result, nil)
 	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *handler) reviewSampleResult(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var body struct {
+		ReviewerID uuid.UUID `json:"reviewer_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.ReviewerID == uuid.Nil {
+		writeError(w, http.StatusBadRequest, "reviewer_id is required")
+		return
+	}
+
+	before, err := h.queries.GetSampleResult(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "sample result not found")
+			return
+		}
+		slog.Error("get sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	after, err := h.queries.ReviewSampleResult(r.Context(), id, body.ReviewerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusConflict, "result is not in 'draft' status")
+			return
+		}
+		slog.Error("review sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	h.publishResultEvent(r.Context(), events.SubjectSampleResultReviewed, "update", after, &before)
+	writeJSON(w, http.StatusOK, after)
+}
+
+func (h *handler) approveSampleResult(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var body struct {
+		ApproverID uuid.UUID `json:"approver_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.ApproverID == uuid.Nil {
+		writeError(w, http.StatusBadRequest, "approver_id is required")
+		return
+	}
+
+	before, err := h.queries.GetSampleResult(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "sample result not found")
+			return
+		}
+		slog.Error("get sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	after, err := h.queries.ApproveSampleResult(r.Context(), id, body.ApproverID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusConflict, "result is not in 'reviewed' status")
+			return
+		}
+		slog.Error("approve sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	h.publishResultEvent(r.Context(), events.SubjectSampleResultApproved, "update", after, &before)
+	writeJSON(w, http.StatusOK, after)
 }
 
 func (h *handler) evaluateCompliance(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +280,60 @@ func (h *handler) evaluateCompliance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+func (h *handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
+	recordID, err := parseUUID(r.PathValue("record_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid record_id")
+		return
+	}
+
+	entries, err := h.queries.ListAuditLog(r.Context(), recordID)
+	if err != nil {
+		slog.Error("list audit log", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
+// publishResultEvent sends a change event for a sample result to NATS.
+// Failures are logged but do not block the HTTP response.
+func (h *handler) publishResultEvent(ctx context.Context, subject, action string, result storage.SampleResult, before *storage.SampleResult) {
+	orgID, err := h.queries.GetOrganizationIDForResult(ctx, result.ID)
+	if err != nil {
+		slog.Error("resolve org for audit", "error", err)
+		return
+	}
+
+	newJSON, _ := json.Marshal(result)
+	event := events.ChangeEvent{
+		Subject:        subject,
+		Timestamp:      time.Now(),
+		OrganizationID: orgID,
+		TableName:      "sample_results",
+		RecordID:       result.ID,
+		Action:         action,
+		ChangedBy:      result.EnteredBy,
+		NewValues:      newJSON,
+	}
+
+	if action == "update" && before != nil {
+		oldJSON, _ := json.Marshal(before)
+		event.OldValues = oldJSON
+		// For reviews/approvals, the changer is the reviewer/approver, not the original enterer
+		if result.ReviewedBy != nil && (before.ReviewedBy == nil) {
+			event.ChangedBy = *result.ReviewedBy
+		}
+		if result.ApprovedBy != nil && (before.ApprovedBy == nil) {
+			event.ChangedBy = *result.ApprovedBy
+		}
+	}
+
+	if err := h.bus.Publish(event); err != nil {
+		slog.Error("publish event", "error", err, "subject", subject)
+	}
 }
 
 // --- helpers ---

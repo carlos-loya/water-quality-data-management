@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -290,4 +291,95 @@ func (q *Queries) EvaluateCompliance(ctx context.Context, facilityID uuid.UUID) 
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByName[ComplianceResult])
+}
+
+// GetSampleResult retrieves a single sample result by ID.
+func (q *Queries) GetSampleResult(ctx context.Context, id uuid.UUID) (SampleResult, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, monitoring_location_id, parameter_id, method_id, unit_id,
+		       collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
+		       status, entered_by, entered_at, reviewed_by, reviewed_at,
+		       approved_by, approved_at, source, source_reference, notes,
+		       created_at, updated_at
+		FROM sample_results
+		WHERE id = $1`, id)
+	if err != nil {
+		return SampleResult{}, err
+	}
+	return pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[SampleResult])
+}
+
+// ReviewSampleResult transitions a sample result from 'draft' to 'reviewed'.
+func (q *Queries) ReviewSampleResult(ctx context.Context, id uuid.UUID, reviewerID uuid.UUID) (SampleResult, error) {
+	rows, err := q.pool.Query(ctx, `
+		UPDATE sample_results
+		SET status = 'reviewed', reviewed_by = $2, reviewed_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'draft'
+		RETURNING id, monitoring_location_id, parameter_id, method_id, unit_id,
+		          collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
+		          status, entered_by, entered_at, reviewed_by, reviewed_at,
+		          approved_by, approved_at, source, source_reference, notes,
+		          created_at, updated_at`, id, reviewerID)
+	if err != nil {
+		return SampleResult{}, err
+	}
+	return pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[SampleResult])
+}
+
+// ApproveSampleResult transitions a sample result from 'reviewed' to 'approved'.
+func (q *Queries) ApproveSampleResult(ctx context.Context, id uuid.UUID, approverID uuid.UUID) (SampleResult, error) {
+	rows, err := q.pool.Query(ctx, `
+		UPDATE sample_results
+		SET status = 'approved', approved_by = $2, approved_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'reviewed'
+		RETURNING id, monitoring_location_id, parameter_id, method_id, unit_id,
+		          collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
+		          status, entered_by, entered_at, reviewed_by, reviewed_at,
+		          approved_by, approved_at, source, source_reference, notes,
+		          created_at, updated_at`, id, approverID)
+	if err != nil {
+		return SampleResult{}, err
+	}
+	return pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[SampleResult])
+}
+
+// AuditEntry represents a row from the audit_log table.
+type AuditEntry struct {
+	ID             uuid.UUID        `json:"id"`
+	OrganizationID uuid.UUID       `json:"organization_id"`
+	TableName      string           `json:"table_name"`
+	RecordID       uuid.UUID        `json:"record_id"`
+	Action         string           `json:"action"`
+	OldValues      *json.RawMessage `json:"old_values,omitempty"`
+	NewValues      *json.RawMessage `json:"new_values,omitempty"`
+	ChangedBy      uuid.UUID        `json:"changed_by"`
+	ChangedAt      time.Time        `json:"changed_at"`
+	Reason         *string          `json:"reason,omitempty"`
+}
+
+// ListAuditLog returns audit entries for a given record.
+func (q *Queries) ListAuditLog(ctx context.Context, recordID uuid.UUID) ([]AuditEntry, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, organization_id, table_name, record_id, action,
+		       old_values, new_values, changed_by, changed_at, reason
+		FROM audit_log
+		WHERE record_id = $1
+		ORDER BY changed_at DESC`, recordID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[AuditEntry])
+}
+
+// GetOrganizationIDForResult resolves the organization_id for a sample result
+// by traversing the facility hierarchy.
+func (q *Queries) GetOrganizationIDForResult(ctx context.Context, resultID uuid.UUID) (uuid.UUID, error) {
+	var orgID uuid.UUID
+	err := q.pool.QueryRow(ctx, `
+		SELECT f.organization_id
+		FROM sample_results sr
+		JOIN monitoring_locations ml ON sr.monitoring_location_id = ml.id
+		JOIN facilities f ON ml.facility_id = f.id
+		WHERE sr.id = $1`, resultID).Scan(&orgID)
+	return orgID, err
 }
