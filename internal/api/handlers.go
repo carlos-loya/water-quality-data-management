@@ -299,6 +299,29 @@ func (h *handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entries)
 }
 
+func (h *handler) getTrending(w http.ResponseWriter, r *http.Request) {
+	facilityID, err := parseUUID(r.PathValue("facility_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 365 {
+			days = n
+		}
+	}
+
+	series, err := h.queries.GetTrendingData(r.Context(), facilityID, days)
+	if err != nil {
+		slog.Error("get trending", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, series)
+}
+
 func (h *handler) importSampleResults(w http.ResponseWriter, r *http.Request) {
 	orgID, err := parseUUID(r.PathValue("org_id"))
 	if err != nil {

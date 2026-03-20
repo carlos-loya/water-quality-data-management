@@ -4,6 +4,7 @@ import type {
   Parameter,
   SampleResult,
   ComplianceResult,
+  TrendingSeries,
   AuditEntry,
 } from "./types";
 
@@ -53,6 +54,12 @@ export const api = {
 
   evaluateCompliance(facilityId: string) {
     return get<ComplianceResult[]>(`/facilities/${facilityId}/compliance`);
+  },
+
+  getTrending(facilityId: string, days = 30) {
+    return get<TrendingSeries[]>(
+      `/facilities/${facilityId}/trending?days=${days}`
+    );
   },
 
   getAuditLog(recordId: string) {

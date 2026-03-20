@@ -75,6 +75,30 @@ export interface ComplianceResult {
   compliance: string;
 }
 
+export interface TrendingPoint {
+  collected_at: string;
+  result_value: number | null;
+  result_qualifier?: string;
+  location_name: string;
+  parameter_code: string;
+  parameter_name: string;
+  unit_code: string;
+}
+
+export interface TrendingLimit {
+  limit_type: string;
+  limit_value: number;
+}
+
+export interface TrendingSeries {
+  parameter_code: string;
+  parameter_name: string;
+  location_name: string;
+  unit_code: string;
+  points: TrendingPoint[];
+  limits: TrendingLimit[];
+}
+
 export interface AuditEntry {
   id: string;
   organization_id: string;

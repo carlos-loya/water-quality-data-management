@@ -405,6 +405,115 @@ func (q *Queries) ListAuditLog(ctx context.Context, recordID uuid.UUID) ([]Audit
 	return pgx.CollectRows(rows, pgx.RowToStructByName[AuditEntry])
 }
 
+// TrendingPoint represents a single data point for time-series charting.
+type TrendingPoint struct {
+	CollectedAt   time.Time `json:"collected_at"`
+	ResultValue   *float64  `json:"result_value"`
+	Qualifier     *string   `json:"result_qualifier,omitempty"`
+	LocationName  string    `json:"location_name"`
+	ParameterCode string   `json:"parameter_code"`
+	ParameterName string   `json:"parameter_name"`
+	UnitCode      string   `json:"unit_code"`
+}
+
+// TrendingLimit represents a permit limit line for a chart.
+type TrendingLimit struct {
+	LimitType  string  `json:"limit_type"`
+	LimitValue float64 `json:"limit_value"`
+}
+
+// TrendingSeries groups data points and limits for one parameter at one location.
+type TrendingSeries struct {
+	ParameterCode string          `json:"parameter_code"`
+	ParameterName string          `json:"parameter_name"`
+	LocationName  string          `json:"location_name"`
+	UnitCode      string          `json:"unit_code"`
+	Points        []TrendingPoint `json:"points"`
+	Limits        []TrendingLimit `json:"limits"`
+}
+
+// GetTrendingData returns time-series data for a facility, grouped by parameter+location.
+func (q *Queries) GetTrendingData(ctx context.Context, facilityID uuid.UUID, days int) ([]TrendingSeries, error) {
+	if days <= 0 {
+		days = 30
+	}
+
+	rows, err := q.pool.Query(ctx, `
+		SELECT sr.collected_at, sr.result_value, sr.result_qualifier AS qualifier,
+		       ml.name AS location_name, p.code AS parameter_code, p.name AS parameter_name,
+		       u.code AS unit_code
+		FROM sample_results sr
+		JOIN monitoring_locations ml ON sr.monitoring_location_id = ml.id
+		JOIN facilities f ON ml.facility_id = f.id
+		JOIN parameters p ON sr.parameter_id = p.id
+		JOIN units_of_measure u ON sr.unit_id = u.id
+		WHERE f.id = $1 AND sr.collected_at >= now() - make_interval(days => $2)
+		ORDER BY p.code, ml.name, sr.collected_at`, facilityID, days)
+	if err != nil {
+		return nil, err
+	}
+	points, err := pgx.CollectRows(rows, pgx.RowToStructByName[TrendingPoint])
+	if err != nil {
+		return nil, err
+	}
+
+	// Get current limits for this facility
+	limitRows, err := q.pool.Query(ctx, `
+		SELECT DISTINCT p.code AS parameter_code, ml.name AS location_name,
+		       pl.limit_type, pl.limit_value
+		FROM permit_limits pl
+		JOIN monitoring_locations ml ON pl.monitoring_location_id = ml.id
+		JOIN parameters p ON pl.parameter_id = p.id
+		WHERE ml.facility_id = $1
+		  AND pl.effective_start <= CURRENT_DATE
+		  AND (pl.effective_end IS NULL OR pl.effective_end >= CURRENT_DATE)
+		ORDER BY p.code, ml.name, pl.limit_type`, facilityID)
+	if err != nil {
+		return nil, err
+	}
+
+	type limitKey struct{ param, loc string }
+	limitMap := make(map[limitKey][]TrendingLimit)
+	for limitRows.Next() {
+		var paramCode, locName, limitType string
+		var limitValue float64
+		if err := limitRows.Scan(&paramCode, &locName, &limitType, &limitValue); err != nil {
+			return nil, err
+		}
+		k := limitKey{paramCode, locName}
+		limitMap[k] = append(limitMap[k], TrendingLimit{limitType, limitValue})
+	}
+	limitRows.Close()
+
+	// Group points into series by parameter+location
+	type seriesKey struct{ param, loc string }
+	seriesMap := make(map[seriesKey]*TrendingSeries)
+	var seriesOrder []seriesKey
+
+	for _, pt := range points {
+		k := seriesKey{pt.ParameterCode, pt.LocationName}
+		s, ok := seriesMap[k]
+		if !ok {
+			s = &TrendingSeries{
+				ParameterCode: pt.ParameterCode,
+				ParameterName: pt.ParameterName,
+				LocationName:  pt.LocationName,
+				UnitCode:      pt.UnitCode,
+				Limits:        limitMap[limitKey{pt.ParameterCode, pt.LocationName}],
+			}
+			seriesMap[k] = s
+			seriesOrder = append(seriesOrder, k)
+		}
+		s.Points = append(s.Points, pt)
+	}
+
+	result := make([]TrendingSeries, 0, len(seriesOrder))
+	for _, k := range seriesOrder {
+		result = append(result, *seriesMap[k])
+	}
+	return result, nil
+}
+
 // GetOrganizationIDForResult resolves the organization_id for a sample result
 // by traversing the facility hierarchy.
 func (q *Queries) GetOrganizationIDForResult(ctx context.Context, resultID uuid.UUID) (uuid.UUID, error) {
