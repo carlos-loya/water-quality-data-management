@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/carlos-loya/water-quality-data-management/internal/events"
 	"github.com/carlos-loya/water-quality-data-management/internal/ingestion"
+	"github.com/carlos-loya/water-quality-data-management/internal/reports"
 	"github.com/carlos-loya/water-quality-data-management/internal/storage"
 )
 
@@ -281,6 +283,60 @@ func (h *handler) evaluateCompliance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+func (h *handler) complianceExcel(w http.ResponseWriter, r *http.Request) {
+	facilityID, err := parseUUID(r.PathValue("facility_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+
+	results, err := h.queries.EvaluateCompliance(r.Context(), facilityID)
+	if err != nil {
+		slog.Error("compliance excel", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	facilityName := "Facility"
+	if len(results) > 0 {
+		facilityName = results[0].FacilityName
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="compliance-report-%s.xlsx"`, time.Now().Format("2006-01-02")))
+
+	if err := reports.WriteComplianceExcel(w, facilityName, results); err != nil {
+		slog.Error("write excel", "error", err)
+	}
+}
+
+func (h *handler) compliancePDF(w http.ResponseWriter, r *http.Request) {
+	facilityID, err := parseUUID(r.PathValue("facility_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+
+	results, err := h.queries.EvaluateCompliance(r.Context(), facilityID)
+	if err != nil {
+		slog.Error("compliance pdf", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	facilityName := "Facility"
+	if len(results) > 0 {
+		facilityName = results[0].FacilityName
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="compliance-report-%s.pdf"`, time.Now().Format("2006-01-02")))
+
+	if err := reports.WriteCompliancePDF(w, facilityName, results); err != nil {
+		slog.Error("write pdf", "error", err)
+	}
 }
 
 func (h *handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
