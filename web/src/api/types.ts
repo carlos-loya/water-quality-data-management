@@ -99,6 +99,38 @@ export interface TrendingSeries {
   limits: TrendingLimit[];
 }
 
+export interface InstrumentStatus {
+  id: string;
+  name: string;
+  serial_number?: string;
+  instrument_type: string;
+  manufacturer?: string;
+  model?: string;
+  active: boolean;
+  last_calibration_type?: string;
+  last_performed_at?: string;
+  last_status?: string;
+  due_at?: string;
+  calibration_status: "current" | "due_soon" | "overdue" | "no_schedule";
+}
+
+export interface CalibrationRecord {
+  id: string;
+  instrument_id: string;
+  calibration_type: string;
+  performed_at: string;
+  performed_by: string;
+  due_at?: string;
+  status: string;
+  pre_value?: number;
+  post_value?: number;
+  method_reference?: string;
+  corrective_action?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AuditEntry {
   id: string;
   organization_id: string;
