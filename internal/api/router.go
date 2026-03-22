@@ -23,6 +23,8 @@ func NewRouter(queries *storage.Queries, bus *events.Bus) http.Handler {
 	mux.HandleFunc("POST /api/v1/organizations/{org_id}/sample-results/import", h.importSampleResults)
 	mux.HandleFunc("GET /api/v1/facilities/{facility_id}/trending", h.getTrending)
 	mux.HandleFunc("GET /api/v1/facilities/{facility_id}/compliance", h.evaluateCompliance)
+	mux.HandleFunc("GET /api/v1/facilities/{facility_id}/reports/compliance.xlsx", h.complianceExcel)
+	mux.HandleFunc("GET /api/v1/facilities/{facility_id}/reports/compliance.pdf", h.compliancePDF)
 	mux.HandleFunc("GET /api/v1/audit-log/{record_id}", h.listAuditLog)
 
 	return withLogging(mux)

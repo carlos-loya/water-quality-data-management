@@ -24,11 +24,30 @@ export function ComplianceView({ facilityId }: Props) {
     grouped.get(key)!.push(r);
   });
 
+  const downloadUrl = (ext: string) =>
+    `/api/v1/facilities/${facilityId}/reports/compliance.${ext}`;
+
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">
-        Compliance Evaluation
-      </h2>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">
+          Compliance Evaluation
+        </h2>
+        <div className="flex gap-2">
+          <a
+            href={downloadUrl("xlsx")}
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Export Excel
+          </a>
+          <a
+            href={downloadUrl("pdf")}
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Export PDF
+          </a>
+        </div>
+      </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
