@@ -3,16 +3,18 @@ import { FacilitySelector } from "./components/FacilitySelector";
 import { SampleResultsTable } from "./components/SampleResultsTable";
 import { ComplianceView } from "./components/ComplianceView";
 import { TrendingCharts } from "./components/TrendingCharts";
+import { InstrumentsView } from "./components/InstrumentsView";
 
 // Seed data org ID. In a real app this comes from auth.
 const ORG_ID = "019558a0-0000-7000-a000-000000000001";
 
-type Tab = "results" | "trending" | "compliance";
+type Tab = "results" | "trending" | "compliance" | "instruments";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "results", label: "Sample Results" },
   { key: "trending", label: "Trending" },
   { key: "compliance", label: "Compliance" },
+  { key: "instruments", label: "Instruments" },
 ];
 
 function App() {
@@ -70,6 +72,9 @@ function App() {
             )}
             {tab === "compliance" && (
               <ComplianceView facilityId={facilityId} />
+            )}
+            {tab === "instruments" && (
+              <InstrumentsView facilityId={facilityId} />
             )}
           </>
         )}

@@ -514,6 +514,125 @@ func (q *Queries) GetTrendingData(ctx context.Context, facilityID uuid.UUID, day
 	return result, nil
 }
 
+// Instrument represents a lab or field instrument.
+type Instrument struct {
+	ID                  uuid.UUID `json:"id"`
+	FacilityID          uuid.UUID `json:"facility_id"`
+	Name                string    `json:"name"`
+	SerialNumber        *string   `json:"serial_number,omitempty"`
+	InstrumentType      string    `json:"instrument_type"`
+	Manufacturer        *string   `json:"manufacturer,omitempty"`
+	Model               *string   `json:"model,omitempty"`
+	LocationDescription *string   `json:"location_description,omitempty"`
+	Active              bool      `json:"active"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+// CalibrationRecord represents a verification or calibration event.
+type CalibrationRecord struct {
+	ID               uuid.UUID  `json:"id"`
+	InstrumentID     uuid.UUID  `json:"instrument_id"`
+	CalibrationType  string     `json:"calibration_type"`
+	PerformedAt      time.Time  `json:"performed_at"`
+	PerformedBy      uuid.UUID  `json:"performed_by"`
+	DueAt            *time.Time `json:"due_at,omitempty"`
+	Status           string     `json:"status"`
+	PreValue         *float64   `json:"pre_value,omitempty"`
+	PostValue        *float64   `json:"post_value,omitempty"`
+	MethodReference  *string    `json:"method_reference,omitempty"`
+	CorrectiveAction *string    `json:"corrective_action,omitempty"`
+	Notes            *string    `json:"notes,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+// InstrumentStatus combines an instrument with its latest calibration info.
+type InstrumentStatus struct {
+	ID                  uuid.UUID  `json:"id"`
+	Name                string     `json:"name"`
+	SerialNumber        *string    `json:"serial_number,omitempty"`
+	InstrumentType      string     `json:"instrument_type"`
+	Manufacturer        *string    `json:"manufacturer,omitempty"`
+	Model               *string    `json:"model,omitempty"`
+	Active              bool       `json:"active"`
+	LastCalibrationType *string    `json:"last_calibration_type,omitempty"`
+	LastPerformedAt     *time.Time `json:"last_performed_at,omitempty"`
+	LastStatus          *string    `json:"last_status,omitempty"`
+	DueAt               *time.Time `json:"due_at,omitempty"`
+	CalibrationStatus   string     `json:"calibration_status"` // "current", "due_soon", "overdue", "no_schedule"
+}
+
+// ListInstruments returns all instruments for a facility.
+func (q *Queries) ListInstruments(ctx context.Context, facilityID uuid.UUID) ([]Instrument, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, facility_id, name, serial_number, instrument_type,
+		       manufacturer, model, location_description, active, created_at, updated_at
+		FROM instruments
+		WHERE facility_id = $1
+		ORDER BY name`, facilityID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Instrument])
+}
+
+// ListCalibrationRecords returns calibration history for an instrument.
+func (q *Queries) ListCalibrationRecords(ctx context.Context, instrumentID uuid.UUID) ([]CalibrationRecord, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, instrument_id, calibration_type, performed_at, performed_by,
+		       due_at, status, pre_value, post_value, method_reference,
+		       corrective_action, notes, created_at, updated_at
+		FROM calibration_records
+		WHERE instrument_id = $1
+		ORDER BY performed_at DESC`, instrumentID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[CalibrationRecord])
+}
+
+// ListInstrumentStatuses returns instruments with their current calibration status.
+// Flags instruments as overdue (past due_at), due_soon (within 2 days), current, or no_schedule.
+func (q *Queries) ListInstrumentStatuses(ctx context.Context, facilityID uuid.UUID) ([]InstrumentStatus, error) {
+	rows, err := q.pool.Query(ctx, `
+		WITH latest_cal AS (
+			SELECT DISTINCT ON (instrument_id)
+				instrument_id,
+				calibration_type AS last_calibration_type,
+				performed_at AS last_performed_at,
+				status AS last_status,
+				due_at
+			FROM calibration_records
+			ORDER BY instrument_id, performed_at DESC
+		)
+		SELECT
+			i.id, i.name, i.serial_number, i.instrument_type,
+			i.manufacturer, i.model, i.active,
+			lc.last_calibration_type, lc.last_performed_at, lc.last_status, lc.due_at,
+			CASE
+				WHEN lc.due_at IS NULL THEN 'no_schedule'
+				WHEN lc.due_at < now() THEN 'overdue'
+				WHEN lc.due_at < now() + interval '2 days' THEN 'due_soon'
+				ELSE 'current'
+			END AS calibration_status
+		FROM instruments i
+		LEFT JOIN latest_cal lc ON lc.instrument_id = i.id
+		WHERE i.facility_id = $1
+		ORDER BY
+			CASE
+				WHEN lc.due_at IS NULL THEN 3
+				WHEN lc.due_at < now() THEN 0
+				WHEN lc.due_at < now() + interval '2 days' THEN 1
+				ELSE 2
+			END,
+			i.name`, facilityID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[InstrumentStatus])
+}
+
 // GetOrganizationIDForResult resolves the organization_id for a sample result
 // by traversing the facility hierarchy.
 func (q *Queries) GetOrganizationIDForResult(ctx context.Context, resultID uuid.UUID) (uuid.UUID, error) {

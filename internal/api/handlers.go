@@ -355,6 +355,38 @@ func (h *handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entries)
 }
 
+func (h *handler) listInstrumentStatuses(w http.ResponseWriter, r *http.Request) {
+	facilityID, err := parseUUID(r.PathValue("facility_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+
+	statuses, err := h.queries.ListInstrumentStatuses(r.Context(), facilityID)
+	if err != nil {
+		slog.Error("list instrument statuses", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, statuses)
+}
+
+func (h *handler) listCalibrationRecords(w http.ResponseWriter, r *http.Request) {
+	instrumentID, err := parseUUID(r.PathValue("instrument_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid instrument_id")
+		return
+	}
+
+	records, err := h.queries.ListCalibrationRecords(r.Context(), instrumentID)
+	if err != nil {
+		slog.Error("list calibration records", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, records)
+}
+
 func (h *handler) getTrending(w http.ResponseWriter, r *http.Request) {
 	facilityID, err := parseUUID(r.PathValue("facility_id"))
 	if err != nil {

@@ -5,6 +5,8 @@ import type {
   SampleResult,
   ComplianceResult,
   TrendingSeries,
+  InstrumentStatus,
+  CalibrationRecord,
   AuditEntry,
 } from "./types";
 
@@ -59,6 +61,16 @@ export const api = {
   getTrending(facilityId: string, days = 30) {
     return get<TrendingSeries[]>(
       `/facilities/${facilityId}/trending?days=${days}`
+    );
+  },
+
+  listInstrumentStatuses(facilityId: string) {
+    return get<InstrumentStatus[]>(`/facilities/${facilityId}/instruments`);
+  },
+
+  listCalibrationRecords(instrumentId: string) {
+    return get<CalibrationRecord[]>(
+      `/instruments/${instrumentId}/calibrations`
     );
   },
 
