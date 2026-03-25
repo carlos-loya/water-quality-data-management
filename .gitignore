@@ -7,6 +7,10 @@
 
 # Go
 /vendor/
+/server
+
+# Vite
+.vite/
 
 # Environment
 .env

@@ -5,9 +5,6 @@ import type { MonitoringLocation, Parameter, SampleResult } from "../api/types";
 import { StatusBadge } from "./StatusBadge";
 import { AuditPanel } from "./AuditPanel";
 
-// Hardcoded reviewer for demo. In a real app this comes from auth context.
-const DEMO_REVIEWER = "019558a0-0001-7000-a000-000000000003"; // Amy Kim
-
 interface Props {
   facilityId: string;
   orgId: string;
@@ -57,13 +54,13 @@ export function SampleResultsTable({ facilityId, orgId }: Props) {
   });
 
   const reviewMutation = useMutation({
-    mutationFn: (id: string) => api.reviewSampleResult(id, DEMO_REVIEWER),
+    mutationFn: (id: string) => api.reviewSampleResult(id),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["sample-results"] }),
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: string) => api.approveSampleResult(id, DEMO_REVIEWER),
+    mutationFn: (id: string) => api.approveSampleResult(id),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["sample-results"] }),
   });

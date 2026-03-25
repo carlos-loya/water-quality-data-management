@@ -66,7 +66,7 @@ export function AuditPanel({ recordId, onClose }: Props) {
                       {e.changed_by.slice(0, 12)}...
                     </span>
                   </div>
-                  {(oldStatus || newStatus) && (
+                  {(oldStatus != null || newStatus != null) && (
                     <div className="mt-1 text-xs text-gray-600">
                       {oldStatus ? `${oldStatus}` : "(new)"} &rarr;{" "}
                       <span className="font-medium">{String(newStatus)}</span>

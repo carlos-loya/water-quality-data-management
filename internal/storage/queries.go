@@ -21,6 +21,26 @@ func New(pool *pgxpool.Pool) *Queries {
 	return &Queries{pool: pool}
 }
 
+// User represents a system user.
+type User struct {
+	ID             uuid.UUID `json:"id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	Email          string    `json:"email"`
+	Name           string    `json:"name"`
+	PasswordHash   string    `json:"-"`
+	Active         bool      `json:"active"`
+}
+
+// GetUserByEmail returns a user by email within an organization.
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	var u User
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, organization_id, email, name, password_hash, active
+		FROM users
+		WHERE email = $1`, email).Scan(&u.ID, &u.OrganizationID, &u.Email, &u.Name, &u.PasswordHash, &u.Active)
+	return u, err
+}
+
 // Facility represents a treatment plant.
 type Facility struct {
 	ID             uuid.UUID  `json:"id"`

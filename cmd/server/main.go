@@ -20,6 +20,7 @@ func main() {
 	dbURL := envOr("DATABASE_URL", "postgres://wqm:wqm_dev@localhost:5432/water_quality?sslmode=disable")
 	migrationsPath := envOr("MIGRATIONS_PATH", "file://migrations")
 	natsURL := envOr("NATS_URL", "nats://localhost:4222")
+	jwtSecret := envOr("JWT_SECRET", "dev-secret-change-in-production")
 	addr := envOr("ADDR", ":8080")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -51,7 +52,7 @@ func main() {
 	}
 
 	queries := storage.New(db)
-	router := api.NewRouter(queries, bus)
+	router := api.NewRouter(queries, bus, jwtSecret)
 
 	srv := &http.Server{
 		Addr:         addr,

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/carlos-loya/water-quality-data-management/internal/auth"
 	"github.com/carlos-loya/water-quality-data-management/internal/events"
 	"github.com/carlos-loya/water-quality-data-management/internal/ingestion"
 	"github.com/carlos-loya/water-quality-data-management/internal/reports"
@@ -20,12 +21,73 @@ import (
 )
 
 type handler struct {
-	queries *storage.Queries
-	bus     *events.Bus
+	queries   *storage.Queries
+	bus       *events.Bus
+	jwtSecret string
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *handler) login(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Email == "" || body.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
+
+	user, err := h.queries.GetUserByEmail(r.Context(), body.Email)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	if !user.Active {
+		writeError(w, http.StatusUnauthorized, "account is disabled")
+		return
+	}
+	if !auth.CheckPassword(user.PasswordHash, body.Password) {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	token, err := auth.GenerateToken(h.jwtSecret, user.ID, user.OrganizationID, user.Email, user.Name)
+	if err != nil {
+		slog.Error("generate token", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token": token,
+		"user": map[string]any{
+			"id":              user.ID,
+			"organization_id": user.OrganizationID,
+			"email":           user.Email,
+			"name":            user.Name,
+		},
+	})
+}
+
+func (h *handler) me(w http.ResponseWriter, r *http.Request) {
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":              claims.UserID,
+		"organization_id": claims.OrganizationID,
+		"email":           claims.Email,
+		"name":            claims.Name,
+	})
 }
 
 func (h *handler) listFacilities(w http.ResponseWriter, r *http.Request) {
@@ -186,15 +248,9 @@ func (h *handler) reviewSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		ReviewerID uuid.UUID `json:"reviewer_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-	if body.ReviewerID == uuid.Nil {
-		writeError(w, http.StatusBadRequest, "reviewer_id is required")
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 
@@ -209,7 +265,7 @@ func (h *handler) reviewSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	after, err := h.queries.ReviewSampleResult(r.Context(), id, body.ReviewerID)
+	after, err := h.queries.ReviewSampleResult(r.Context(), id, claims.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusConflict, "result is not in 'draft' status")
@@ -231,15 +287,9 @@ func (h *handler) approveSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		ApproverID uuid.UUID `json:"approver_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-	if body.ApproverID == uuid.Nil {
-		writeError(w, http.StatusBadRequest, "approver_id is required")
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 
@@ -254,7 +304,7 @@ func (h *handler) approveSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	after, err := h.queries.ApproveSampleResult(r.Context(), id, body.ApproverID)
+	after, err := h.queries.ApproveSampleResult(r.Context(), id, claims.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusConflict, "result is not in 'reviewed' status")
