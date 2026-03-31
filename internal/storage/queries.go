@@ -560,12 +560,16 @@ func (q *Queries) GetTrendingData(ctx context.Context, facilityID uuid.UUID, day
 		k := seriesKey{pt.ParameterCode, pt.LocationName}
 		s, ok := seriesMap[k]
 		if !ok {
+			limits := limitMap[limitKey{pt.ParameterCode, pt.LocationName}]
+			if limits == nil {
+				limits = []TrendingLimit{}
+			}
 			s = &TrendingSeries{
 				ParameterCode: pt.ParameterCode,
 				ParameterName: pt.ParameterName,
 				LocationName:  pt.LocationName,
 				UnitCode:      pt.UnitCode,
-				Limits:        limitMap[limitKey{pt.ParameterCode, pt.LocationName}],
+				Limits:        limits,
 			}
 			seriesMap[k] = s
 			seriesOrder = append(seriesOrder, k)
