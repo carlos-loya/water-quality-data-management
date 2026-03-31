@@ -1,11 +1,41 @@
 const TOKEN_KEY = "wqm_token";
 const USER_KEY = "wqm_user";
 
+export interface RoleClaim {
+  role: string;
+  facility_id?: string;
+}
+
 export interface AuthUser {
   id: string;
   organization_id: string;
   email: string;
   name: string;
+  roles: RoleClaim[];
+}
+
+export function hasRole(user: AuthUser, role: string): boolean {
+  return user.roles?.some((r) => r.role === role) ?? false;
+}
+
+export function hasAnyRole(user: AuthUser, roles: string[]): boolean {
+  return roles.some((role) => hasRole(user, role));
+}
+
+export function canReview(user: AuthUser): boolean {
+  return hasAnyRole(user, ["admin", "reviewer"]);
+}
+
+export function canApprove(user: AuthUser): boolean {
+  return hasRole(user, "admin");
+}
+
+export function primaryRole(user: AuthUser): string {
+  const order = ["admin", "reviewer", "operator", "viewer"];
+  for (const role of order) {
+    if (hasRole(user, role)) return role;
+  }
+  return "user";
 }
 
 export function getToken(): string | null {

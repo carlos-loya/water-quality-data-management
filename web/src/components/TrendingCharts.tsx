@@ -60,7 +60,7 @@ function SeriesChart({ series }: { series: TrendingSeries }) {
             {series.location_name} &middot; {series.unit_code}
           </p>
         </div>
-        {series.limits.length > 0 && (
+        {series.limits?.length > 0 && (
           <div className="flex gap-3">
             {series.limits.map((l) => (
               <span
@@ -111,7 +111,7 @@ function SeriesChart({ series }: { series: TrendingSeries }) {
             dot={{ r: 3, fill: "#3b82f6" }}
             activeDot={{ r: 5 }}
           />
-          {series.limits.map((l) => (
+          {(series.limits ?? []).map((l) => (
             <ReferenceLine
               key={l.limit_type}
               y={l.limit_value}

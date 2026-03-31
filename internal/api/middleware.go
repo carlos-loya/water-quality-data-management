@@ -46,6 +46,30 @@ func withAuth(secret string, next http.Handler) http.Handler {
 	})
 }
 
+// requireRole wraps a handler and returns 403 if the user lacks the required role.
+func requireRole(role string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := auth.UserFrom(r.Context())
+		if claims == nil || !claims.HasRole(role) {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// requireAnyRole wraps a handler and returns 403 if the user holds none of the listed roles.
+func requireAnyRole(roles []string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := auth.UserFrom(r.Context())
+		if claims == nil || !claims.HasAnyRole(roles...) {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
+			return
+		}
+		next(w, r)
+	}
+}
+
 type statusWriter struct {
 	http.ResponseWriter
 	status int

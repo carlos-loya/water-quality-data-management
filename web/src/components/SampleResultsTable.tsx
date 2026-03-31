@@ -2,15 +2,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
 import type { MonitoringLocation, Parameter, SampleResult } from "../api/types";
+import { type AuthUser, canReview, canApprove } from "../api/auth";
 import { StatusBadge } from "./StatusBadge";
 import { AuditPanel } from "./AuditPanel";
 
 interface Props {
   facilityId: string;
   orgId: string;
+  user: AuthUser;
 }
 
-export function SampleResultsTable({ facilityId, orgId }: Props) {
+export function SampleResultsTable({ facilityId, orgId, user }: Props) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [auditResultId, setAuditResultId] = useState<string | null>(null);
@@ -142,7 +144,7 @@ export function SampleResultsTable({ facilityId, orgId }: Props) {
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 text-center">
                     <div className="flex items-center justify-center gap-1">
-                      {r.status === "draft" && (
+                      {r.status === "draft" && canReview(user) && (
                         <button
                           onClick={() => reviewMutation.mutate(r.id)}
                           disabled={reviewMutation.isPending}
@@ -151,7 +153,7 @@ export function SampleResultsTable({ facilityId, orgId }: Props) {
                           Review
                         </button>
                       )}
-                      {r.status === "reviewed" && (
+                      {r.status === "reviewed" && canApprove(user) && (
                         <button
                           onClick={() => approveMutation.mutate(r.id)}
                           disabled={approveMutation.isPending}

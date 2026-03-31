@@ -41,6 +41,52 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	return u, err
 }
 
+// UserRole represents a role assignment for a user.
+type UserRole struct {
+	RoleName   string     `json:"role"`
+	FacilityID *uuid.UUID `json:"facility_id,omitempty"`
+}
+
+// GetUserRoles returns all role assignments for a user.
+func (q *Queries) GetUserRoles(ctx context.Context, userID uuid.UUID) ([]UserRole, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT r.name AS role_name, ur.facility_id
+		FROM user_roles ur
+		JOIN roles r ON ur.role_id = r.id
+		WHERE ur.user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[UserRole])
+}
+
+// GetFacilityIDForLocation resolves the facility_id for a monitoring location.
+func (q *Queries) GetFacilityIDForLocation(ctx context.Context, locationID uuid.UUID) (uuid.UUID, error) {
+	var facilityID uuid.UUID
+	err := q.pool.QueryRow(ctx, `
+		SELECT facility_id FROM monitoring_locations WHERE id = $1`, locationID).Scan(&facilityID)
+	return facilityID, err
+}
+
+// ListFacilitiesForUser returns facilities the user has access to based on role assignments.
+// Users with org-wide roles (facility_id IS NULL) get all facilities.
+// Users with facility-scoped roles get only those facilities.
+func (q *Queries) ListFacilitiesForUser(ctx context.Context, orgID, userID uuid.UUID) ([]Facility, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT DISTINCT f.id, f.organization_id, f.name, f.facility_type, f.address,
+		       f.latitude, f.longitude, f.active, f.created_at, f.updated_at
+		FROM facilities f
+		JOIN user_roles ur ON ur.user_id = $2
+		JOIN roles r ON ur.role_id = r.id
+		WHERE f.organization_id = $1
+		  AND (ur.facility_id IS NULL OR ur.facility_id = f.id)
+		ORDER BY f.name`, orgID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Facility])
+}
+
 // Facility represents a treatment plant.
 type Facility struct {
 	ID             uuid.UUID  `json:"id"`
@@ -514,12 +560,16 @@ func (q *Queries) GetTrendingData(ctx context.Context, facilityID uuid.UUID, day
 		k := seriesKey{pt.ParameterCode, pt.LocationName}
 		s, ok := seriesMap[k]
 		if !ok {
+			limits := limitMap[limitKey{pt.ParameterCode, pt.LocationName}]
+			if limits == nil {
+				limits = []TrendingLimit{}
+			}
 			s = &TrendingSeries{
 				ParameterCode: pt.ParameterCode,
 				ParameterName: pt.ParameterName,
 				LocationName:  pt.LocationName,
 				UnitCode:      pt.UnitCode,
-				Limits:        limitMap[limitKey{pt.ParameterCode, pt.LocationName}],
+				Limits:        limits,
 			}
 			seriesMap[k] = s
 			seriesOrder = append(seriesOrder, k)
