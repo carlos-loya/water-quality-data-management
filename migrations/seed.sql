@@ -18,7 +18,8 @@ INSERT INTO users (id, organization_id, email, name, password_hash) VALUES
     ('019558a0-0001-7000-a000-000000000001', '019558a0-0000-7000-a000-000000000001', 'admin@clearwater.gov',    'Sarah Chen',     '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G'),
     ('019558a0-0001-7000-a000-000000000002', '019558a0-0000-7000-a000-000000000001', 'jmartinez@clearwater.gov','Jorge Martinez', '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G'),
     ('019558a0-0001-7000-a000-000000000003', '019558a0-0000-7000-a000-000000000001', 'akim@clearwater.gov',     'Amy Kim',        '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G'),
-    ('019558a0-0001-7000-a000-000000000004', '019558a0-0000-7000-a000-000000000001', 'rjohnson@clearwater.gov', 'Robert Johnson', '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G');
+    ('019558a0-0001-7000-a000-000000000004', '019558a0-0000-7000-a000-000000000001', 'rjohnson@clearwater.gov', 'Robert Johnson', '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G'),
+    ('019558a0-0001-7000-a000-000000000005', '019558a0-0000-7000-a000-000000000001', 'tlee@clearwater.gov',     'Tony Lee',       '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G');
 
 -- ============================================================================
 -- Roles
@@ -27,7 +28,7 @@ INSERT INTO users (id, organization_id, email, name, password_hash) VALUES
 INSERT INTO roles (id, organization_id, name, description) VALUES
     ('019558a0-0002-7000-a000-000000000001', '019558a0-0000-7000-a000-000000000001', 'admin',    'System administrator'),
     ('019558a0-0002-7000-a000-000000000002', '019558a0-0000-7000-a000-000000000001', 'operator', 'Plant operator — data entry and review'),
-    ('019558a0-0002-7000-a000-000000000003', '019558a0-0000-7000-a000-000000000001', 'reviewer', 'Compliance reviewer — can approve results'),
+    ('019558a0-0002-7000-a000-000000000003', '019558a0-0000-7000-a000-000000000001', 'reviewer', 'Compliance reviewer — can review results'),
     ('019558a0-0002-7000-a000-000000000004', '019558a0-0000-7000-a000-000000000001', 'viewer',   'Read-only access');
 
 -- ============================================================================
@@ -42,12 +43,13 @@ INSERT INTO facilities (id, organization_id, name, facility_type, address, latit
 -- User Roles (after facilities for FK)
 -- ============================================================================
 
--- Sarah = admin (all facilities), Jorge = operator at WTP, Amy = reviewer (all), Robert = operator at WWTP
+-- Sarah = admin (all facilities), Jorge = operator at WTP, Amy = reviewer (all), Robert = operator at WWTP, Tony = viewer (all)
 INSERT INTO user_roles (id, user_id, role_id, facility_id) VALUES
     ('019558a0-0003-7000-a000-000000000001', '019558a0-0001-7000-a000-000000000001', '019558a0-0002-7000-a000-000000000001', NULL),
     ('019558a0-0003-7000-a000-000000000002', '019558a0-0001-7000-a000-000000000002', '019558a0-0002-7000-a000-000000000002', '019558a0-0004-7000-a000-000000000001'),
     ('019558a0-0003-7000-a000-000000000003', '019558a0-0001-7000-a000-000000000003', '019558a0-0002-7000-a000-000000000003', NULL),
-    ('019558a0-0003-7000-a000-000000000004', '019558a0-0001-7000-a000-000000000004', '019558a0-0002-7000-a000-000000000002', '019558a0-0004-7000-a000-000000000002');
+    ('019558a0-0003-7000-a000-000000000004', '019558a0-0001-7000-a000-000000000004', '019558a0-0002-7000-a000-000000000002', '019558a0-0004-7000-a000-000000000002'),
+    ('019558a0-0003-7000-a000-000000000005', '019558a0-0001-7000-a000-000000000005', '019558a0-0002-7000-a000-000000000004', NULL);
 
 -- ============================================================================
 -- Monitoring Locations

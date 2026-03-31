@@ -58,7 +58,22 @@ func (h *handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.GenerateToken(h.jwtSecret, user.ID, user.OrganizationID, user.Email, user.Name)
+	dbRoles, err := h.queries.GetUserRoles(r.Context(), user.ID)
+	if err != nil {
+		slog.Error("get user roles", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	roleClaims := make([]auth.RoleClaim, len(dbRoles))
+	for i, r := range dbRoles {
+		roleClaims[i] = auth.RoleClaim{Role: r.RoleName}
+		if r.FacilityID != nil {
+			roleClaims[i].FacilityID = r.FacilityID.String()
+		}
+	}
+
+	token, err := auth.GenerateToken(h.jwtSecret, user.ID, user.OrganizationID, user.Email, user.Name, roleClaims)
 	if err != nil {
 		slog.Error("generate token", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -72,6 +87,7 @@ func (h *handler) login(w http.ResponseWriter, r *http.Request) {
 			"organization_id": user.OrganizationID,
 			"email":           user.Email,
 			"name":            user.Name,
+			"roles":           roleClaims,
 		},
 	})
 }
@@ -87,6 +103,7 @@ func (h *handler) me(w http.ResponseWriter, r *http.Request) {
 		"organization_id": claims.OrganizationID,
 		"email":           claims.Email,
 		"name":            claims.Name,
+		"roles":           claims.Roles,
 	})
 }
 
@@ -97,7 +114,8 @@ func (h *handler) listFacilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	facilities, err := h.queries.ListFacilities(r.Context(), orgID)
+	claims := auth.UserFrom(r.Context())
+	facilities, err := h.queries.ListFacilitiesForUser(r.Context(), orgID, claims.UserID)
 	if err != nil {
 		slog.Error("list facilities", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -110,6 +128,9 @@ func (h *handler) listMonitoringLocations(w http.ResponseWriter, r *http.Request
 	facilityID, err := parseUUID(r.PathValue("facility_id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+	if !checkFacilityAccess(w, r, facilityID) {
 		return
 	}
 
@@ -325,6 +346,9 @@ func (h *handler) evaluateCompliance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid facility_id")
 		return
 	}
+	if !checkFacilityAccess(w, r, facilityID) {
+		return
+	}
 
 	results, err := h.queries.EvaluateCompliance(r.Context(), facilityID)
 	if err != nil {
@@ -339,6 +363,9 @@ func (h *handler) complianceExcel(w http.ResponseWriter, r *http.Request) {
 	facilityID, err := parseUUID(r.PathValue("facility_id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+	if !checkFacilityAccess(w, r, facilityID) {
 		return
 	}
 
@@ -366,6 +393,9 @@ func (h *handler) compliancePDF(w http.ResponseWriter, r *http.Request) {
 	facilityID, err := parseUUID(r.PathValue("facility_id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+	if !checkFacilityAccess(w, r, facilityID) {
 		return
 	}
 
@@ -411,6 +441,9 @@ func (h *handler) listInstrumentStatuses(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid facility_id")
 		return
 	}
+	if !checkFacilityAccess(w, r, facilityID) {
+		return
+	}
 
 	statuses, err := h.queries.ListInstrumentStatuses(r.Context(), facilityID)
 	if err != nil {
@@ -441,6 +474,9 @@ func (h *handler) getTrending(w http.ResponseWriter, r *http.Request) {
 	facilityID, err := parseUUID(r.PathValue("facility_id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+	if !checkFacilityAccess(w, r, facilityID) {
 		return
 	}
 
@@ -539,6 +575,17 @@ func (h *handler) publishResultEvent(ctx context.Context, subject, action string
 	if err := h.bus.Publish(event); err != nil {
 		slog.Error("publish event", "error", err, "subject", subject)
 	}
+}
+
+// checkFacilityAccess verifies the authenticated user has access to the given facility.
+// Returns true if access is allowed, false if a 403 was written.
+func checkFacilityAccess(w http.ResponseWriter, r *http.Request, facilityID uuid.UUID) bool {
+	claims := auth.UserFrom(r.Context())
+	if claims == nil || !claims.HasFacilityAccess(facilityID.String()) {
+		writeError(w, http.StatusForbidden, "no access to this facility")
+		return false
+	}
+	return true
 }
 
 // --- helpers ---

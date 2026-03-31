@@ -86,6 +86,7 @@ export function LoginPage({ onLogin }: Props) {
               <div><span className="font-mono">jmartinez@clearwater.gov</span> — Operator (WTP)</div>
               <div><span className="font-mono">akim@clearwater.gov</span> — Reviewer</div>
               <div><span className="font-mono">rjohnson@clearwater.gov</span> — Operator (WWTP)</div>
+              <div><span className="font-mono">tlee@clearwater.gov</span> — Viewer</div>
               <div className="mt-1 text-gray-400">Password for all: <span className="font-mono">demo1234</span></div>
             </div>
           </div>

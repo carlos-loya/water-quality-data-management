@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getUser, clearAuth, type AuthUser } from "./api/auth";
+import { getUser, clearAuth, primaryRole, type AuthUser } from "./api/auth";
 import { LoginPage } from "./components/LoginPage";
 import { FacilitySelector } from "./components/FacilitySelector";
 import { SampleResultsTable } from "./components/SampleResultsTable";
@@ -44,7 +44,12 @@ function App() {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="text-sm font-medium text-gray-900">{user.name}</div>
+              <div className="flex items-center gap-2 justify-end">
+                <span className="text-sm font-medium text-gray-900">{user.name}</span>
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 capitalize">
+                  {primaryRole(user)}
+                </span>
+              </div>
               <div className="text-xs text-gray-500">{user.email}</div>
             </div>
             <button
@@ -88,7 +93,7 @@ function App() {
             </div>
 
             {tab === "results" && (
-              <SampleResultsTable facilityId={facilityId} orgId={user.organization_id} />
+              <SampleResultsTable facilityId={facilityId} orgId={user.organization_id} user={user} />
             )}
             {tab === "trending" && (
               <TrendingCharts facilityId={facilityId} />
