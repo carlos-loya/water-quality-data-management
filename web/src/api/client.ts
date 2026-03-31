@@ -10,10 +10,21 @@ import type {
   AuditEntry,
 } from "./types";
 
+import { getToken, clearAuth } from "./auth";
+
 const BASE = "/api/v1";
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (res.status === 401) {
+    clearAuth();
+    window.location.reload();
+    throw new Error("session expired");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `HTTP ${res.status}`);
@@ -21,17 +32,18 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
+  return handleResponse<T>(res);
+}
+
 async function patch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+  return handleResponse<T>(res);
 }
 
 export const api = {
@@ -78,15 +90,11 @@ export const api = {
     return get<AuditEntry[]>(`/audit-log/${recordId}`);
   },
 
-  reviewSampleResult(id: string, reviewerId: string) {
-    return patch<SampleResult>(`/sample-results/${id}/review`, {
-      reviewer_id: reviewerId,
-    });
+  reviewSampleResult(id: string) {
+    return patch<SampleResult>(`/sample-results/${id}/review`, {});
   },
 
-  approveSampleResult(id: string, approverId: string) {
-    return patch<SampleResult>(`/sample-results/${id}/approve`, {
-      approver_id: approverId,
-    });
+  approveSampleResult(id: string) {
+    return patch<SampleResult>(`/sample-results/${id}/approve`, {});
   },
 };

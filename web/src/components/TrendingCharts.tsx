@@ -98,7 +98,7 @@ function SeriesChart({ series }: { series: TrendingSeries }) {
               borderRadius: 8,
               border: "1px solid #e5e7eb",
             }}
-            formatter={(value: number) => [
+            formatter={(value) => [
               `${value} ${series.unit_code}`,
               series.parameter_name,
             ]}

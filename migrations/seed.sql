@@ -13,11 +13,12 @@ INSERT INTO organizations (id, name, slug) VALUES
 -- Users
 -- ============================================================================
 
+-- All seed users have password: demo1234
 INSERT INTO users (id, organization_id, email, name, password_hash) VALUES
-    ('019558a0-0001-7000-a000-000000000001', '019558a0-0000-7000-a000-000000000001', 'admin@clearwater.gov',    'Sarah Chen',     '$argon2id$placeholder'),
-    ('019558a0-0001-7000-a000-000000000002', '019558a0-0000-7000-a000-000000000001', 'jmartinez@clearwater.gov','Jorge Martinez', '$argon2id$placeholder'),
-    ('019558a0-0001-7000-a000-000000000003', '019558a0-0000-7000-a000-000000000001', 'akim@clearwater.gov',     'Amy Kim',        '$argon2id$placeholder'),
-    ('019558a0-0001-7000-a000-000000000004', '019558a0-0000-7000-a000-000000000001', 'rjohnson@clearwater.gov', 'Robert Johnson', '$argon2id$placeholder');
+    ('019558a0-0001-7000-a000-000000000001', '019558a0-0000-7000-a000-000000000001', 'admin@clearwater.gov',    'Sarah Chen',     '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G'),
+    ('019558a0-0001-7000-a000-000000000002', '019558a0-0000-7000-a000-000000000001', 'jmartinez@clearwater.gov','Jorge Martinez', '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G'),
+    ('019558a0-0001-7000-a000-000000000003', '019558a0-0000-7000-a000-000000000001', 'akim@clearwater.gov',     'Amy Kim',        '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G'),
+    ('019558a0-0001-7000-a000-000000000004', '019558a0-0000-7000-a000-000000000001', 'rjohnson@clearwater.gov', 'Robert Johnson', '$2a$10$z3mj/XT1GcQPAHJK8MvfQOeKyHemu9NqC5NNeOv4kOBrgBT/xu49G');
 
 -- ============================================================================
 -- Roles

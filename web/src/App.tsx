@@ -1,12 +1,11 @@
 import { useState } from "react";
+import { getUser, clearAuth, type AuthUser } from "./api/auth";
+import { LoginPage } from "./components/LoginPage";
 import { FacilitySelector } from "./components/FacilitySelector";
 import { SampleResultsTable } from "./components/SampleResultsTable";
 import { ComplianceView } from "./components/ComplianceView";
 import { TrendingCharts } from "./components/TrendingCharts";
 import { InstrumentsView } from "./components/InstrumentsView";
-
-// Seed data org ID. In a real app this comes from auth.
-const ORG_ID = "019558a0-0000-7000-a000-000000000001";
 
 type Tab = "results" | "trending" | "compliance" | "instruments";
 
@@ -18,19 +17,43 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 function App() {
+  const [user, setUser] = useState<AuthUser | null>(getUser);
   const [facilityId, setFacilityId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("results");
+
+  if (!user) {
+    return <LoginPage onLogin={() => setUser(getUser())} />;
+  }
+
+  function handleLogout() {
+    clearAuth();
+    setUser(null);
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4">
-          <h1 className="text-xl font-bold text-gray-900">
-            Water Quality Data Management
-          </h1>
-          <p className="text-sm text-gray-500">
-            Utility compliance and operations platform
-          </p>
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">
+              Water Quality Data Management
+            </h1>
+            <p className="text-sm text-gray-500">
+              Utility compliance and operations platform
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-sm font-medium text-gray-900">{user.name}</div>
+              <div className="text-xs text-gray-500">{user.email}</div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -40,7 +63,7 @@ function App() {
             Facility
           </h2>
           <FacilitySelector
-            orgId={ORG_ID}
+            orgId={user.organization_id}
             selectedId={facilityId}
             onSelect={setFacilityId}
           />
@@ -65,7 +88,7 @@ function App() {
             </div>
 
             {tab === "results" && (
-              <SampleResultsTable facilityId={facilityId} orgId={ORG_ID} />
+              <SampleResultsTable facilityId={facilityId} orgId={user.organization_id} />
             )}
             {tab === "trending" && (
               <TrendingCharts facilityId={facilityId} />
