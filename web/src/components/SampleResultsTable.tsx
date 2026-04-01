@@ -1,10 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
-import type { MonitoringLocation, Parameter, SampleResult } from "../api/types";
-import { type AuthUser, canReview, canApprove } from "../api/auth";
+import type { MonitoringLocation, Parameter, SampleResult, CreateSampleResultInput } from "../api/types";
+import { type AuthUser, canReview, canApprove, hasAnyRole } from "../api/auth";
 import { StatusBadge } from "./StatusBadge";
 import { AuditPanel } from "./AuditPanel";
+import { SampleResultForm } from "./SampleResultForm";
 
 interface Props {
   facilityId: string;
@@ -16,6 +17,8 @@ export function SampleResultsTable({ facilityId, orgId, user }: Props) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [auditResultId, setAuditResultId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const { data: locations } = useQuery({
     queryKey: ["locations", facilityId],
@@ -67,6 +70,17 @@ export function SampleResultsTable({ facilityId, orgId, user }: Props) {
       queryClient.invalidateQueries({ queryKey: ["sample-results"] }),
   });
 
+  const createMutation = useMutation({
+    mutationFn: (input: CreateSampleResultInput) =>
+      api.createSampleResult(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sample-results"] });
+      setShowForm(false);
+      setCreateError(null);
+    },
+    onError: (err: Error) => setCreateError(err.message),
+  });
+
   const locMap = new Map<string, MonitoringLocation>(
     locations?.map((l) => [l.id, l]) ?? []
   );
@@ -85,17 +99,41 @@ export function SampleResultsTable({ facilityId, orgId, user }: Props) {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">Sample Results</h2>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm"
-        >
-          <option value="">All statuses</option>
-          <option value="draft">Draft</option>
-          <option value="reviewed">Reviewed</option>
-          <option value="approved">Approved</option>
-        </select>
+        <div className="flex items-center gap-2">
+          {hasAnyRole(user, ["admin", "operator"]) && !showForm && (
+            <button
+              onClick={() => { setShowForm(true); setCreateError(null); }}
+              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              + New Result
+            </button>
+          )}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="approved">Approved</option>
+          </select>
+        </div>
       </div>
+
+      {showForm && locations && parameters && (
+        <SampleResultForm
+          facilityId={facilityId}
+          orgId={orgId}
+          userId={user.id}
+          locations={locations}
+          parameters={parameters}
+          onSubmit={(input) => createMutation.mutate(input)}
+          onCancel={() => { setShowForm(false); setCreateError(null); }}
+          isPending={createMutation.isPending}
+          error={createError}
+        />
+      )}
 
       {isLoading ? (
         <div className="py-8 text-center text-sm text-gray-500">Loading...</div>

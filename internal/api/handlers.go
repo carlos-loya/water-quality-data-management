@@ -159,6 +159,22 @@ func (h *handler) listParameters(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, params)
 }
 
+func (h *handler) listUnits(w http.ResponseWriter, r *http.Request) {
+	orgID, err := parseUUID(r.PathValue("org_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid org_id")
+		return
+	}
+
+	units, err := h.queries.ListUnits(r.Context(), orgID)
+	if err != nil {
+		slog.Error("list units", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, units)
+}
+
 func (h *handler) listSampleResults(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := storage.SampleResultFilter{}
