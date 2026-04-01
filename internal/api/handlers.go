@@ -175,6 +175,22 @@ func (h *handler) listUnits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, units)
 }
 
+func (h *handler) listValidationRules(w http.ResponseWriter, r *http.Request) {
+	orgID, err := parseUUID(r.PathValue("org_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid org_id")
+		return
+	}
+
+	rules, err := h.queries.ListValidationRules(r.Context(), orgID)
+	if err != nil {
+		slog.Error("list validation rules", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, rules)
+}
+
 func (h *handler) listSampleResults(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := storage.SampleResultFilter{}
@@ -265,6 +281,31 @@ func (h *handler) createSampleResult(w http.ResponseWriter, r *http.Request) {
 	if params.ResultValue == nil && params.ResultQualifier == nil {
 		writeError(w, http.StatusBadRequest, "either result_value or result_qualifier is required")
 		return
+	}
+
+	// Validate result_value against configurable parameter rules.
+	rule, err := h.queries.GetValidationRule(r.Context(), params.ParameterID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Error("get validation rule", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err == nil {
+		if rule.IsRequired && params.ResultValue == nil {
+			writeError(w, http.StatusBadRequest, "a numeric result_value is required for this parameter")
+			return
+		}
+		if params.ResultValue != nil {
+			v := *params.ResultValue
+			if rule.MinValue != nil && v < *rule.MinValue {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("result_value %.4g is below minimum %.4g", v, *rule.MinValue))
+				return
+			}
+			if rule.MaxValue != nil && v > *rule.MaxValue {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("result_value %.4g exceeds maximum %.4g", v, *rule.MaxValue))
+				return
+			}
+		}
 	}
 
 	result, err := h.queries.CreateSampleResult(r.Context(), params)

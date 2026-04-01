@@ -3,6 +3,7 @@ import type {
   MonitoringLocation,
   Parameter,
   UnitOfMeasure,
+  ValidationRule,
   SampleResult,
   CreateSampleResultInput,
   ComplianceResult,
@@ -74,6 +75,10 @@ export const api = {
 
   listUnits(orgId: string) {
     return get<UnitOfMeasure[]>(`/organizations/${orgId}/units`);
+  },
+
+  listValidationRules(orgId: string) {
+    return get<ValidationRule[]>(`/organizations/${orgId}/validation-rules`);
   },
 
   listSampleResults(params: Record<string, string>) {

@@ -231,6 +231,45 @@ func (q *Queries) ListUnits(ctx context.Context, orgID uuid.UUID) ([]UnitOfMeasu
 	return pgx.CollectRows(rows, pgx.RowToStructByName[UnitOfMeasure])
 }
 
+// ValidationRule defines configurable validation constraints for a parameter.
+type ValidationRule struct {
+	ID              uuid.UUID `json:"id" db:"id"`
+	ParameterID     uuid.UUID `json:"parameter_id" db:"parameter_id"`
+	MinValue        *float64  `json:"min_value" db:"min_value"`
+	MaxValue        *float64  `json:"max_value" db:"max_value"`
+	PrecisionDigits *int16    `json:"precision_digits" db:"precision_digits"`
+	IsRequired      bool      `json:"is_required" db:"is_required"`
+	Active          bool      `json:"active" db:"active"`
+}
+
+// ListValidationRules returns all active validation rules for an organization's parameters.
+func (q *Queries) ListValidationRules(ctx context.Context, orgID uuid.UUID) ([]ValidationRule, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT vr.id, vr.parameter_id, vr.min_value, vr.max_value,
+		       vr.precision_digits, vr.is_required, vr.active
+		FROM validation_rules vr
+		JOIN parameters p ON p.id = vr.parameter_id
+		WHERE p.organization_id = $1 AND vr.active = true
+		ORDER BY p.code`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ValidationRule])
+}
+
+// GetValidationRule returns the active validation rule for a specific parameter.
+func (q *Queries) GetValidationRule(ctx context.Context, parameterID uuid.UUID) (ValidationRule, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, parameter_id, min_value, max_value,
+		       precision_digits, is_required, active
+		FROM validation_rules
+		WHERE parameter_id = $1 AND active = true`, parameterID)
+	if err != nil {
+		return ValidationRule{}, err
+	}
+	return pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[ValidationRule])
+}
+
 // ListParameters returns all parameters for an organization.
 func (q *Queries) ListParameters(ctx context.Context, orgID uuid.UUID) ([]Parameter, error) {
 	rows, err := q.pool.Query(ctx, `
