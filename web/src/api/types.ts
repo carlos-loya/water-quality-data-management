@@ -35,6 +35,25 @@ export interface Parameter {
   updated_at: string;
 }
 
+export interface UnitOfMeasure {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface CreateSampleResultInput {
+  monitoring_location_id: string;
+  parameter_id: string;
+  unit_id: string;
+  collected_at: string;
+  result_value?: number | null;
+  result_qualifier?: string;
+  detection_limit?: number;
+  entered_by: string;
+  source: string;
+  notes?: string;
+}
+
 export interface SampleResult {
   id: string;
   monitoring_location_id: string;

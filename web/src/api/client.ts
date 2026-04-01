@@ -2,7 +2,9 @@ import type {
   Facility,
   MonitoringLocation,
   Parameter,
+  UnitOfMeasure,
   SampleResult,
+  CreateSampleResultInput,
   ComplianceResult,
   TrendingSeries,
   InstrumentStatus,
@@ -37,6 +39,15 @@ async function get<T>(path: string): Promise<T> {
   return handleResponse<T>(res);
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<T>(res);
+}
+
 async function patch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "PATCH",
@@ -61,9 +72,17 @@ export const api = {
     return get<Parameter[]>(`/organizations/${orgId}/parameters`);
   },
 
+  listUnits(orgId: string) {
+    return get<UnitOfMeasure[]>(`/organizations/${orgId}/units`);
+  },
+
   listSampleResults(params: Record<string, string>) {
     const query = new URLSearchParams(params).toString();
     return get<SampleResult[]>(`/sample-results?${query}`);
+  },
+
+  createSampleResult(input: CreateSampleResultInput) {
+    return post<SampleResult>("/sample-results", input);
   },
 
   evaluateCompliance(facilityId: string) {
