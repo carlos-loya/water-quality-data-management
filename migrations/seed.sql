@@ -209,3 +209,31 @@ INSERT INTO sample_results (id, monitoring_location_id, parameter_id, method_id,
 -- A non-detect result example (ammonia below detection limit)
 INSERT INTO sample_results (id, monitoring_location_id, parameter_id, method_id, unit_id, collected_at, result_value, result_qualifier, detection_limit, status, entered_by, reviewed_by, approved_by, reviewed_at, approved_at, source) VALUES
     ('019558a0-0010-7000-a000-000000000025', '019558a0-0005-7000-a000-000000000004', '019558a0-0007-7000-a000-000000000008', '019558a0-0008-7000-a000-000000000006', '019558a0-0006-7000-a000-000000000001', '2026-03-10 06:00:00-05', NULL, '<', 0.1, 'approved', '019558a0-0001-7000-a000-000000000002', '019558a0-0001-7000-a000-000000000003', '019558a0-0001-7000-a000-000000000003', '2026-03-10 14:00:00-05', '2026-03-10 16:00:00-05', 'manual');
+
+-- ============================================================================
+-- Validation Rules  (configurable range and precision per parameter)
+-- ============================================================================
+
+INSERT INTO validation_rules (id, parameter_id, min_value, max_value, precision_digits, is_required) VALUES
+    -- pH: 0-14, 2 decimal places
+    ('019558a0-0011-7000-a000-000000000001', '019558a0-0007-7000-a000-000000000001', 0,    14,      2, true),
+    -- Turbidity: 0-4000 NTU
+    ('019558a0-0011-7000-a000-000000000002', '019558a0-0007-7000-a000-000000000002', 0,    4000,    2, false),
+    -- Free Chlorine: 0-20 mg/L
+    ('019558a0-0011-7000-a000-000000000003', '019558a0-0007-7000-a000-000000000003', 0,    20,      2, false),
+    -- Total Chlorine: 0-25 mg/L
+    ('019558a0-0011-7000-a000-000000000004', '019558a0-0007-7000-a000-000000000004', 0,    25,      2, false),
+    -- Temperature: -5 to 50 degrees C
+    ('019558a0-0011-7000-a000-000000000005', '019558a0-0007-7000-a000-000000000005', -5,   50,      1, true),
+    -- BOD (5-day): 0-2000 mg/L
+    ('019558a0-0011-7000-a000-000000000006', '019558a0-0007-7000-a000-000000000006', 0,    2000,    1, false),
+    -- TSS: 0-5000 mg/L
+    ('019558a0-0011-7000-a000-000000000007', '019558a0-0007-7000-a000-000000000007', 0,    5000,    1, false),
+    -- Ammonia Nitrogen: 0-100 mg/L
+    ('019558a0-0011-7000-a000-000000000008', '019558a0-0007-7000-a000-000000000008', 0,    100,     2, false),
+    -- Dissolved Oxygen: 0-20 mg/L
+    ('019558a0-0011-7000-a000-000000000009', '019558a0-0007-7000-a000-000000000009', 0,    20,      2, false),
+    -- E. coli: 0-500000 CFU/100mL
+    ('019558a0-0011-7000-a000-000000000010', '019558a0-0007-7000-a000-000000000010', 0,    500000,  0, false),
+    -- Total Coliform: 0-500000 CFU/100mL
+    ('019558a0-0011-7000-a000-000000000011', '019558a0-0007-7000-a000-000000000011', 0,    500000,  0, false);

@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { CreateSampleResultInput, MonitoringLocation, Parameter, UnitOfMeasure } from "../api/types";
+import type { CreateSampleResultInput, MonitoringLocation, Parameter, UnitOfMeasure, ValidationRule } from "../api/types";
 
 interface Props {
   facilityId: string;
@@ -35,15 +35,31 @@ export function SampleResultForm({
   const [resultValue, setResultValue] = useState("");
   const [resultQualifier, setResultQualifier] = useState("");
   const [notes, setNotes] = useState("");
+  const [valueError, setValueError] = useState<string | null>(null);
 
   const { data: units } = useQuery({
     queryKey: ["units", orgId],
     queryFn: () => api.listUnits(orgId),
   });
 
+  const { data: validationRules } = useQuery({
+    queryKey: ["validation-rules", orgId],
+    queryFn: () => api.listValidationRules(orgId),
+  });
+
   const unitMap = new Map<string, UnitOfMeasure>(
     units?.map((u) => [u.id, u]) ?? []
   );
+
+  // Index rules by parameter_id for fast lookup
+  const ruleMap = useMemo(
+    () => new Map<string, ValidationRule>(
+      validationRules?.map((r) => [r.parameter_id, r]) ?? []
+    ),
+    [validationRules]
+  );
+
+  const activeRule = parameterId ? ruleMap.get(parameterId) : undefined;
 
   // Auto-select unit when parameter changes
   useEffect(() => {
@@ -54,8 +70,38 @@ export function SampleResultForm({
     }
   }, [parameterId, parameters, units]);
 
+  // Validate value against rules whenever it changes
+  useEffect(() => {
+    if (!resultValue || !activeRule) {
+      setValueError(null);
+      return;
+    }
+    const v = parseFloat(resultValue);
+    if (isNaN(v)) {
+      setValueError("Must be a number");
+      return;
+    }
+    if (activeRule.min_value !== null && v < activeRule.min_value) {
+      setValueError(`Below minimum (${activeRule.min_value})`);
+      return;
+    }
+    if (activeRule.max_value !== null && v > activeRule.max_value) {
+      setValueError(`Exceeds maximum (${activeRule.max_value})`);
+      return;
+    }
+    if (activeRule.precision_digits !== null) {
+      const parts = resultValue.split(".");
+      if (parts[1] && parts[1].length > activeRule.precision_digits) {
+        setValueError(`Max ${activeRule.precision_digits} decimal place(s)`);
+        return;
+      }
+    }
+    setValueError(null);
+  }, [resultValue, activeRule]);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (valueError) return;
 
     const input: CreateSampleResultInput = {
       monitoring_location_id: locationId,
@@ -82,12 +128,32 @@ export function SampleResultForm({
     onSubmit(input);
   }
 
+  const isValueRequired = activeRule?.is_required && !resultQualifier;
+
   const isValid =
     locationId &&
     parameterId &&
     unitId &&
     collectedAt &&
-    (resultValue || resultQualifier);
+    (resultValue || resultQualifier) &&
+    !valueError;
+
+  // Build hint text for value field
+  function rangeHint(): string | null {
+    if (!activeRule) return null;
+    const parts: string[] = [];
+    if (activeRule.min_value !== null && activeRule.max_value !== null) {
+      parts.push(`Range: ${activeRule.min_value} – ${activeRule.max_value}`);
+    } else if (activeRule.min_value !== null) {
+      parts.push(`Min: ${activeRule.min_value}`);
+    } else if (activeRule.max_value !== null) {
+      parts.push(`Max: ${activeRule.max_value}`);
+    }
+    if (activeRule.precision_digits !== null) {
+      parts.push(`${activeRule.precision_digits} decimal(s)`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
 
   return (
     <form
@@ -171,20 +237,32 @@ export function SampleResultForm({
           />
         </label>
 
-        <label className="block">
-          <span className="text-xs font-medium text-gray-600">
-            Result Value {resultQualifier ? "" : "*"}
-          </span>
-          <input
-            type="number"
-            step="any"
-            required={!resultQualifier}
-            value={resultValue}
-            onChange={(e) => setResultValue(e.target.value)}
-            placeholder="e.g. 7.2"
-            className="mt-1 block w-full rounded border border-gray-300 px-3 py-1.5 text-sm font-mono"
-          />
-        </label>
+        <div className="block">
+          <label>
+            <span className="text-xs font-medium text-gray-600">
+              Result Value {isValueRequired ? "*" : resultQualifier ? "" : "*"}
+            </span>
+            <input
+              type="number"
+              step="any"
+              required={!resultQualifier}
+              value={resultValue}
+              onChange={(e) => setResultValue(e.target.value)}
+              placeholder="e.g. 7.2"
+              className={`mt-1 block w-full rounded border px-3 py-1.5 text-sm font-mono ${
+                valueError
+                  ? "border-red-400 bg-red-50"
+                  : "border-gray-300"
+              }`}
+            />
+          </label>
+          {valueError && (
+            <p className="mt-1 text-xs text-red-600">{valueError}</p>
+          )}
+          {!valueError && rangeHint() && (
+            <p className="mt-1 text-xs text-gray-400">{rangeHint()}</p>
+          )}
+        </div>
 
         <label className="block">
           <span className="text-xs font-medium text-gray-600">

@@ -23,6 +23,7 @@ func NewRouter(queries *storage.Queries, bus *events.Bus, jwtSecret string) http
 	protected.HandleFunc("GET /api/v1/facilities/{facility_id}/monitoring-locations", h.listMonitoringLocations)
 	protected.HandleFunc("GET /api/v1/organizations/{org_id}/parameters", h.listParameters)
 	protected.HandleFunc("GET /api/v1/organizations/{org_id}/units", h.listUnits)
+	protected.HandleFunc("GET /api/v1/organizations/{org_id}/validation-rules", h.listValidationRules)
 	protected.HandleFunc("GET /api/v1/sample-results", h.listSampleResults)
 	protected.HandleFunc("POST /api/v1/sample-results", requireAnyRole([]string{"admin", "operator"}, h.createSampleResult))
 	protected.HandleFunc("PATCH /api/v1/sample-results/{id}/review", requireAnyRole([]string{"admin", "reviewer"}, h.reviewSampleResult))

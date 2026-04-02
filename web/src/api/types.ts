@@ -41,6 +41,16 @@ export interface UnitOfMeasure {
   name: string;
 }
 
+export interface ValidationRule {
+  id: string;
+  parameter_id: string;
+  min_value: number | null;
+  max_value: number | null;
+  precision_digits: number | null;
+  is_required: boolean;
+  active: boolean;
+}
+
 export interface CreateSampleResultInput {
   monitoring_location_id: string;
   parameter_id: string;
