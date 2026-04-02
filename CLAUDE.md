@@ -124,10 +124,27 @@ Refer to the RFI sections. Major gaps:
 - **6.5/6.6:** Cross-program analytics and integration with city systems (KloudGin, SpryPoint, MaintStar)
 - **Testing:** Comprehensive suite defined in issue #13. Current coverage is auth, handler validation, reports, and frontend auth helpers. Storage/integration tests still needed.
 
+## Testing Requirements
+
+**Every new feature must include comprehensive tests.** This is not optional. A feature is not complete until its tests are written and passing. See issue #13 for the full test plan and examples of what "comprehensive" means.
+
+What to test for every feature:
+- All happy paths (success cases)
+- All input validation and error paths (bad input, missing fields, invalid formats)
+- Edge cases and boundary conditions
+- Role/permission enforcement (who can and cannot perform the action)
+- State transitions and constraints (e.g., draft → reviewed → approved)
+
+Test commands:
+```bash
+go test ./...              # Backend
+cd web && npm test         # Frontend
+```
+
+Backend tests use `net/http/httptest` and standard Go testing. Frontend tests use Vitest (not Jest). Storage/integration tests that need a database are tracked in issue #13.
+
 ## Style Notes
 
 - Don't over-scaffold; start minimal, let structure emerge
 - Create docs alongside code, commit often on feature branches
 - Always validate (build + test + typecheck) before pushing or creating PRs
-- Backend tests don't require a database — test pure logic and input validation paths
-- Frontend uses Vitest (not Jest)
