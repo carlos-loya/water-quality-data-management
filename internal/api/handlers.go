@@ -291,7 +291,7 @@ func (h *handler) createSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err == nil {
-		if rule.IsRequired && params.ResultValue == nil {
+		if rule.IsRequired && params.ResultValue == nil && params.ResultQualifier == nil {
 			writeError(w, http.StatusBadRequest, "a numeric result_value is required for this parameter")
 			return
 		}
