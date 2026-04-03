@@ -8,9 +8,9 @@ import (
 )
 
 // NewRouter creates the HTTP handler with all routes.
-func NewRouter(queries *storage.Queries, bus *events.Bus, jwtSecret string) http.Handler {
+func NewRouter(store storage.Store, bus *events.Bus, jwtSecret string) http.Handler {
 	mux := http.NewServeMux()
-	h := &handler{queries: queries, bus: bus, jwtSecret: jwtSecret}
+	h := &handler{store: store, bus: bus, jwtSecret: jwtSecret}
 
 	// Public routes
 	mux.HandleFunc("GET /api/v1/health", h.health)

@@ -41,12 +41,12 @@ var requiredColumns = []string{
 
 // CSVImporter handles parsing and importing CSV data into sample_results.
 type CSVImporter struct {
-	queries *storage.Queries
+	store storage.Store
 }
 
 // NewCSVImporter creates a new importer.
-func NewCSVImporter(queries *storage.Queries) *CSVImporter {
-	return &CSVImporter{queries: queries}
+func NewCSVImporter(store storage.Store) *CSVImporter {
+	return &CSVImporter{store: store}
 }
 
 // Import reads a CSV from r and inserts valid rows as sample results.
@@ -71,7 +71,7 @@ func (imp *CSVImporter) Import(ctx context.Context, r io.Reader, orgID, enteredB
 	}
 
 	// Build lookup maps for validation
-	locations, err := imp.queries.ListAllMonitoringLocations(ctx, orgID)
+	locations, err := imp.store.ListAllMonitoringLocations(ctx, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("load locations: %w", err)
 	}
@@ -80,7 +80,7 @@ func (imp *CSVImporter) Import(ctx context.Context, r io.Reader, orgID, enteredB
 		locByName[strings.ToUpper(l.Name)] = l
 	}
 
-	parameters, err := imp.queries.ListParameters(ctx, orgID)
+	parameters, err := imp.store.ListParameters(ctx, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("load parameters: %w", err)
 	}
@@ -89,7 +89,7 @@ func (imp *CSVImporter) Import(ctx context.Context, r io.Reader, orgID, enteredB
 		paramByCode[strings.ToUpper(p.Code)] = p
 	}
 
-	units, err := imp.queries.ListUnits(ctx, orgID)
+	units, err := imp.store.ListUnits(ctx, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("load units: %w", err)
 	}
@@ -120,7 +120,7 @@ func (imp *CSVImporter) Import(ctx context.Context, r io.Reader, orgID, enteredB
 			continue
 		}
 
-		sr, err := imp.queries.CreateSampleResult(ctx, params)
+		sr, err := imp.store.CreateSampleResult(ctx, params)
 		if err != nil {
 			result.Errors = append(result.Errors, RowError{
 				Row:    rowNum,

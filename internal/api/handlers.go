@@ -21,7 +21,7 @@ import (
 )
 
 type handler struct {
-	queries   *storage.Queries
+	store     storage.Store
 	bus       *events.Bus
 	jwtSecret string
 }
@@ -44,7 +44,7 @@ func (h *handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.queries.GetUserByEmail(r.Context(), body.Email)
+	user, err := h.store.GetUserByEmail(r.Context(), body.Email)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -58,7 +58,7 @@ func (h *handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dbRoles, err := h.queries.GetUserRoles(r.Context(), user.ID)
+	dbRoles, err := h.store.GetUserRoles(r.Context(), user.ID)
 	if err != nil {
 		slog.Error("get user roles", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -115,7 +115,7 @@ func (h *handler) listFacilities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims := auth.UserFrom(r.Context())
-	facilities, err := h.queries.ListFacilitiesForUser(r.Context(), orgID, claims.UserID)
+	facilities, err := h.store.ListFacilitiesForUser(r.Context(), orgID, claims.UserID)
 	if err != nil {
 		slog.Error("list facilities", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -134,7 +134,7 @@ func (h *handler) listMonitoringLocations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	locations, err := h.queries.ListMonitoringLocations(r.Context(), facilityID)
+	locations, err := h.store.ListMonitoringLocations(r.Context(), facilityID)
 	if err != nil {
 		slog.Error("list monitoring locations", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -150,7 +150,7 @@ func (h *handler) listParameters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, err := h.queries.ListParameters(r.Context(), orgID)
+	params, err := h.store.ListParameters(r.Context(), orgID)
 	if err != nil {
 		slog.Error("list parameters", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -166,7 +166,7 @@ func (h *handler) listUnits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	units, err := h.queries.ListUnits(r.Context(), orgID)
+	units, err := h.store.ListUnits(r.Context(), orgID)
 	if err != nil {
 		slog.Error("list units", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -182,7 +182,7 @@ func (h *handler) listValidationRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rules, err := h.queries.ListValidationRules(r.Context(), orgID)
+	rules, err := h.store.ListValidationRules(r.Context(), orgID)
 	if err != nil {
 		slog.Error("list validation rules", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -239,7 +239,7 @@ func (h *handler) listSampleResults(w http.ResponseWriter, r *http.Request) {
 		filter.Limit = n
 	}
 
-	results, err := h.queries.ListSampleResults(r.Context(), filter)
+	results, err := h.store.ListSampleResults(r.Context(), filter)
 	if err != nil {
 		slog.Error("list sample results", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -284,7 +284,7 @@ func (h *handler) createSampleResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate result_value against configurable parameter rules.
-	rule, err := h.queries.GetValidationRule(r.Context(), params.ParameterID)
+	rule, err := h.store.GetValidationRule(r.Context(), params.ParameterID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Error("get validation rule", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -308,7 +308,7 @@ func (h *handler) createSampleResult(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.queries.CreateSampleResult(r.Context(), params)
+	result, err := h.store.CreateSampleResult(r.Context(), params)
 	if err != nil {
 		slog.Error("create sample result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -332,7 +332,7 @@ func (h *handler) reviewSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before, err := h.queries.GetSampleResult(r.Context(), id)
+	before, err := h.store.GetSampleResult(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "sample result not found")
@@ -343,7 +343,7 @@ func (h *handler) reviewSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	after, err := h.queries.ReviewSampleResult(r.Context(), id, claims.UserID)
+	after, err := h.store.ReviewSampleResult(r.Context(), id, claims.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusConflict, "result is not in 'draft' status")
@@ -371,7 +371,7 @@ func (h *handler) approveSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before, err := h.queries.GetSampleResult(r.Context(), id)
+	before, err := h.store.GetSampleResult(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "sample result not found")
@@ -382,7 +382,7 @@ func (h *handler) approveSampleResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	after, err := h.queries.ApproveSampleResult(r.Context(), id, claims.UserID)
+	after, err := h.store.ApproveSampleResult(r.Context(), id, claims.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusConflict, "result is not in 'reviewed' status")
@@ -407,7 +407,7 @@ func (h *handler) evaluateCompliance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.queries.EvaluateCompliance(r.Context(), facilityID)
+	results, err := h.store.EvaluateCompliance(r.Context(), facilityID)
 	if err != nil {
 		slog.Error("evaluate compliance", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -426,7 +426,7 @@ func (h *handler) complianceExcel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.queries.EvaluateCompliance(r.Context(), facilityID)
+	results, err := h.store.EvaluateCompliance(r.Context(), facilityID)
 	if err != nil {
 		slog.Error("compliance excel", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -456,7 +456,7 @@ func (h *handler) compliancePDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.queries.EvaluateCompliance(r.Context(), facilityID)
+	results, err := h.store.EvaluateCompliance(r.Context(), facilityID)
 	if err != nil {
 		slog.Error("compliance pdf", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -483,7 +483,7 @@ func (h *handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := h.queries.ListAuditLog(r.Context(), recordID)
+	entries, err := h.store.ListAuditLog(r.Context(), recordID)
 	if err != nil {
 		slog.Error("list audit log", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -502,7 +502,7 @@ func (h *handler) listInstrumentStatuses(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	statuses, err := h.queries.ListInstrumentStatuses(r.Context(), facilityID)
+	statuses, err := h.store.ListInstrumentStatuses(r.Context(), facilityID)
 	if err != nil {
 		slog.Error("list instrument statuses", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -518,7 +518,7 @@ func (h *handler) listCalibrationRecords(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	records, err := h.queries.ListCalibrationRecords(r.Context(), instrumentID)
+	records, err := h.store.ListCalibrationRecords(r.Context(), instrumentID)
 	if err != nil {
 		slog.Error("list calibration records", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -544,7 +544,7 @@ func (h *handler) getTrending(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	series, err := h.queries.GetTrendingData(r.Context(), facilityID, days)
+	series, err := h.store.GetTrendingData(r.Context(), facilityID, days)
 	if err != nil {
 		slog.Error("get trending", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -580,7 +580,8 @@ func (h *handler) importSampleResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	importer := ingestion.NewCSVImporter(h.queries)
+	importer := ingestion.NewCSVImporter(h.store)
+
 	result, err := importer.Import(r.Context(), file, orgID, enteredBy)
 	if err != nil {
 		slog.Error("csv import", "error", err)
@@ -599,7 +600,7 @@ func (h *handler) importSampleResults(w http.ResponseWriter, r *http.Request) {
 // publishResultEvent sends a change event for a sample result to NATS.
 // Failures are logged but do not block the HTTP response.
 func (h *handler) publishResultEvent(ctx context.Context, subject, action string, result storage.SampleResult, before *storage.SampleResult) {
-	orgID, err := h.queries.GetOrganizationIDForResult(ctx, result.ID)
+	orgID, err := h.store.GetOrganizationIDForResult(ctx, result.ID)
 	if err != nil {
 		slog.Error("resolve org for audit", "error", err)
 		return
@@ -629,6 +630,9 @@ func (h *handler) publishResultEvent(ctx context.Context, subject, action string
 		}
 	}
 
+	if h.bus == nil {
+		return
+	}
 	if err := h.bus.Publish(event); err != nil {
 		slog.Error("publish event", "error", err, "subject", subject)
 	}
