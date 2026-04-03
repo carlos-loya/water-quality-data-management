@@ -33,7 +33,7 @@ function mockFetch(body: unknown, status = 200) {
 }
 
 function lastFetchCall(): [string, RequestInit] {
-  return (fetch as any).mock.calls[0];
+  return vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
 }
 
 // =========================================================================
@@ -46,14 +46,14 @@ describe("auth headers", () => {
     mockFetch([]);
     await api.listFacilities("org-1");
     const [, init] = lastFetchCall();
-    expect((init.headers as any)["Authorization"]).toBe("Bearer my-jwt");
+    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer my-jwt");
   });
 
   it("omits Authorization when no token", async () => {
     mockFetch([]);
     await api.listFacilities("org-1");
     const [, init] = lastFetchCall();
-    expect((init.headers as any)["Authorization"]).toBeUndefined();
+    expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
   });
 });
 
@@ -153,19 +153,20 @@ describe("api.listSampleResults", () => {
 describe("api.createSampleResult", () => {
   it("sends POST with correct body", async () => {
     mockFetch({ id: "new-id" });
-    const input = {
+    const input: import("./types").CreateSampleResultInput = {
       monitoring_location_id: "loc-1",
       parameter_id: "param-1",
       unit_id: "unit-1",
       collected_at: "2025-06-01T00:00:00Z",
       entered_by: "user-1",
       result_value: 7.2,
+      source: "manual",
     };
-    await api.createSampleResult(input as any);
+    await api.createSampleResult(input);
     const [url, init] = lastFetchCall();
     expect(url).toBe("/api/v1/sample-results");
     expect(init.method).toBe("POST");
-    expect((init.headers as any)["Content-Type"]).toBe("application/json");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
     const body = JSON.parse(init.body as string);
     expect(body.result_value).toBe(7.2);
   });

@@ -123,7 +123,6 @@ export function SampleResultsTable({ facilityId, orgId, user }: Props) {
 
       {showForm && locations && parameters && (
         <SampleResultForm
-          facilityId={facilityId}
           orgId={orgId}
           userId={user.id}
           locations={locations}

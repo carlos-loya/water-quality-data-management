@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { CreateSampleResultInput, MonitoringLocation, Parameter, UnitOfMeasure, ValidationRule } from "../api/types";
 
 interface Props {
-  facilityId: string;
   orgId: string;
   userId: string;
   locations: MonitoringLocation[];
@@ -16,7 +15,6 @@ interface Props {
 }
 
 export function SampleResultForm({
-  facilityId,
   orgId,
   userId,
   locations,
@@ -35,7 +33,6 @@ export function SampleResultForm({
   const [resultValue, setResultValue] = useState("");
   const [resultQualifier, setResultQualifier] = useState("");
   const [notes, setNotes] = useState("");
-  const [valueError, setValueError] = useState<string | null>(null);
 
   const { data: units } = useQuery({
     queryKey: ["units", orgId],
@@ -62,41 +59,33 @@ export function SampleResultForm({
   const activeRule = parameterId ? ruleMap.get(parameterId) : undefined;
 
   // Auto-select unit when parameter changes
-  useEffect(() => {
-    if (!parameterId) return;
-    const param = parameters.find((p) => p.id === parameterId);
+  function handleParameterChange(newParameterId: string) {
+    setParameterId(newParameterId);
+    if (!newParameterId) return;
+    const param = parameters.find((p) => p.id === newParameterId);
     if (param?.default_unit_id && unitMap.has(param.default_unit_id)) {
       setUnitId(param.default_unit_id);
     }
-  }, [parameterId, parameters, units]);
+  }
 
-  // Validate value against rules whenever it changes
-  useEffect(() => {
-    if (!resultValue || !activeRule) {
-      setValueError(null);
-      return;
-    }
+  // Derive validation error from current state (no effect needed)
+  const valueError = useMemo(() => {
+    if (!resultValue || !activeRule) return null;
     const v = parseFloat(resultValue);
-    if (isNaN(v)) {
-      setValueError("Must be a number");
-      return;
-    }
+    if (isNaN(v)) return "Must be a number";
     if (activeRule.min_value !== null && v < activeRule.min_value) {
-      setValueError(`Below minimum (${activeRule.min_value})`);
-      return;
+      return `Below minimum (${activeRule.min_value})`;
     }
     if (activeRule.max_value !== null && v > activeRule.max_value) {
-      setValueError(`Exceeds maximum (${activeRule.max_value})`);
-      return;
+      return `Exceeds maximum (${activeRule.max_value})`;
     }
     if (activeRule.precision_digits !== null) {
       const parts = resultValue.split(".");
       if (parts[1] && parts[1].length > activeRule.precision_digits) {
-        setValueError(`Max ${activeRule.precision_digits} decimal place(s)`);
-        return;
+        return `Max ${activeRule.precision_digits} decimal place(s)`;
       }
     }
-    setValueError(null);
+    return null;
   }, [resultValue, activeRule]);
 
   function handleSubmit(e: React.FormEvent) {
@@ -195,7 +184,7 @@ export function SampleResultForm({
           <select
             required
             value={parameterId}
-            onChange={(e) => setParameterId(e.target.value)}
+            onChange={(e) => handleParameterChange(e.target.value)}
             className="mt-1 block w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
           >
             <option value="">Select parameter...</option>

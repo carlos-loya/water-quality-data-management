@@ -57,6 +57,7 @@ describe("hasRole", () => {
   });
 
   it("handles null roles gracefully", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const user = { ...makeUser([]), roles: null as any };
     expect(hasRole(user, "admin")).toBe(false);
   });
@@ -205,6 +206,7 @@ describe("login", () => {
     expect(JSON.parse(store["wqm_user"]).email).toBe("test@example.com");
 
     // Verify fetch was called correctly
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fetchCall = (fetch as any).mock.calls[0];
     expect(fetchCall[0]).toBe("/api/v1/auth/login");
     expect(fetchCall[1].method).toBe("POST");
