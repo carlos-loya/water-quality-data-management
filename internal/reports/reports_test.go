@@ -2,6 +2,7 @@ package reports
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,10 @@ func sampleComplianceData() []storage.ComplianceResult {
 	}
 }
 
+// =========================================================================
+// Excel
+// =========================================================================
+
 func TestWriteComplianceExcel(t *testing.T) {
 	var buf bytes.Buffer
 	err := WriteComplianceExcel(&buf, "Test Facility", sampleComplianceData())
@@ -67,46 +72,6 @@ func TestWriteComplianceExcelEmpty(t *testing.T) {
 	}
 }
 
-func TestWriteCompliancePDF(t *testing.T) {
-	var buf bytes.Buffer
-	err := WriteCompliancePDF(&buf, "Test Facility", sampleComplianceData())
-	if err != nil {
-		t.Fatalf("WriteCompliancePDF: %v", err)
-	}
-	if buf.Len() == 0 {
-		t.Fatal("PDF output should not be empty")
-	}
-	// PDF files start with %PDF
-	if string(buf.Bytes()[:4]) != "%PDF" {
-		t.Error("output should be a valid PDF file")
-	}
-}
-
-func TestWriteCompliancePDFEmpty(t *testing.T) {
-	var buf bytes.Buffer
-	err := WriteCompliancePDF(&buf, "Empty Facility", nil)
-	if err != nil {
-		t.Fatalf("WriteCompliancePDF with empty data: %v", err)
-	}
-	if buf.Len() == 0 {
-		t.Fatal("PDF output should not be empty even with no data")
-	}
-}
-
-func TestWriteCompliancePDFCountsSummary(t *testing.T) {
-	// Verify the function handles a mix of compliance statuses without error.
-	v := 5.0
-	data := []storage.ComplianceResult{
-		{FacilityName: "F", LocationName: "L", ParameterName: "P", ResultValue: &v, UnitCode: "mg/L", CollectedAt: time.Now(), LimitType: "daily_max", LimitValue: 10, Compliance: "OK"},
-		{FacilityName: "F", LocationName: "L", ParameterName: "P", ResultValue: &v, UnitCode: "mg/L", CollectedAt: time.Now(), LimitType: "daily_max", LimitValue: 3, Compliance: "EXCEEDANCE"},
-		{FacilityName: "F", LocationName: "L", ParameterName: "P", UnitCode: "mg/L", CollectedAt: time.Now(), LimitType: "daily_max", LimitValue: 10, Compliance: "N/A"},
-	}
-	var buf bytes.Buffer
-	if err := WriteCompliancePDF(&buf, "Multi Status", data); err != nil {
-		t.Fatalf("WriteCompliancePDF: %v", err)
-	}
-}
-
 func TestWriteComplianceExcelWithQualifier(t *testing.T) {
 	q := "<"
 	data := []storage.ComplianceResult{
@@ -127,6 +92,163 @@ func TestWriteComplianceExcelWithQualifier(t *testing.T) {
 		t.Fatalf("WriteComplianceExcel with qualifier: %v", err)
 	}
 }
+
+func TestWriteComplianceExcelLongFacilityName(t *testing.T) {
+	longName := strings.Repeat("A Very Long Facility Name ", 10)
+	var buf bytes.Buffer
+	err := WriteComplianceExcel(&buf, longName, sampleComplianceData())
+	if err != nil {
+		t.Fatalf("WriteComplianceExcel with long name: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("should produce valid output")
+	}
+}
+
+func TestWriteComplianceExcelLargeDataset(t *testing.T) {
+	v := 7.0
+	data := make([]storage.ComplianceResult, 1000)
+	for i := range data {
+		data[i] = storage.ComplianceResult{
+			FacilityName:  "F",
+			LocationName:  "L",
+			ParameterCode: "PH",
+			ParameterName: "pH",
+			ResultValue:   &v,
+			UnitCode:      "SU",
+			CollectedAt:   time.Now(),
+			LimitType:     "daily_max",
+			LimitValue:    9.0,
+			Compliance:    "OK",
+		}
+	}
+	var buf bytes.Buffer
+	if err := WriteComplianceExcel(&buf, "Large", data); err != nil {
+		t.Fatalf("WriteComplianceExcel with 1000 rows: %v", err)
+	}
+}
+
+func TestWriteComplianceExcelNilValueNilQualifier(t *testing.T) {
+	data := []storage.ComplianceResult{
+		{
+			FacilityName:  "F",
+			LocationName:  "L",
+			ParameterName: "P",
+			ResultValue:   nil,
+			Qualifier:     nil,
+			UnitCode:      "mg/L",
+			CollectedAt:   time.Now(),
+			LimitType:     "daily_max",
+			LimitValue:    10,
+			Compliance:    "N/A",
+		},
+	}
+	var buf bytes.Buffer
+	if err := WriteComplianceExcel(&buf, "NilVal", data); err != nil {
+		t.Fatalf("WriteComplianceExcel nil value+qualifier: %v", err)
+	}
+}
+
+// =========================================================================
+// PDF
+// =========================================================================
+
+func TestWriteCompliancePDF(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteCompliancePDF(&buf, "Test Facility", sampleComplianceData())
+	if err != nil {
+		t.Fatalf("WriteCompliancePDF: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("PDF output should not be empty")
+	}
+	if string(buf.Bytes()[:4]) != "%PDF" {
+		t.Error("output should be a valid PDF file")
+	}
+}
+
+func TestWriteCompliancePDFEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteCompliancePDF(&buf, "Empty Facility", nil)
+	if err != nil {
+		t.Fatalf("WriteCompliancePDF with empty data: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("PDF output should not be empty even with no data")
+	}
+}
+
+func TestWriteCompliancePDFCountsSummary(t *testing.T) {
+	v := 5.0
+	data := []storage.ComplianceResult{
+		{FacilityName: "F", LocationName: "L", ParameterName: "P", ResultValue: &v, UnitCode: "mg/L", CollectedAt: time.Now(), LimitType: "daily_max", LimitValue: 10, Compliance: "OK"},
+		{FacilityName: "F", LocationName: "L", ParameterName: "P", ResultValue: &v, UnitCode: "mg/L", CollectedAt: time.Now(), LimitType: "daily_max", LimitValue: 3, Compliance: "EXCEEDANCE"},
+		{FacilityName: "F", LocationName: "L", ParameterName: "P", UnitCode: "mg/L", CollectedAt: time.Now(), LimitType: "daily_max", LimitValue: 10, Compliance: "N/A"},
+	}
+	var buf bytes.Buffer
+	if err := WriteCompliancePDF(&buf, "Multi Status", data); err != nil {
+		t.Fatalf("WriteCompliancePDF: %v", err)
+	}
+}
+
+func TestWriteCompliancePDFSpecialCharacters(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteCompliancePDF(&buf, "Facility & <Plant> \"North\" #1", sampleComplianceData())
+	if err != nil {
+		t.Fatalf("WriteCompliancePDF with special chars: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("should produce valid output")
+	}
+}
+
+func TestWriteCompliancePDFLargeDataset(t *testing.T) {
+	v := 7.0
+	data := make([]storage.ComplianceResult, 1000)
+	for i := range data {
+		data[i] = storage.ComplianceResult{
+			FacilityName:  "F",
+			LocationName:  "L",
+			ParameterCode: "PH",
+			ParameterName: "pH",
+			ResultValue:   &v,
+			UnitCode:      "SU",
+			CollectedAt:   time.Now(),
+			LimitType:     "daily_max",
+			LimitValue:    9.0,
+			Compliance:    "OK",
+		}
+	}
+	var buf bytes.Buffer
+	if err := WriteCompliancePDF(&buf, "Large", data); err != nil {
+		t.Fatalf("WriteCompliancePDF with 1000 rows: %v", err)
+	}
+}
+
+func TestWriteCompliancePDFNilValueNilQualifier(t *testing.T) {
+	data := []storage.ComplianceResult{
+		{
+			FacilityName:  "F",
+			LocationName:  "L",
+			ParameterName: "P",
+			ResultValue:   nil,
+			Qualifier:     nil,
+			UnitCode:      "mg/L",
+			CollectedAt:   time.Now(),
+			LimitType:     "daily_max",
+			LimitValue:    10,
+			Compliance:    "N/A",
+		},
+	}
+	var buf bytes.Buffer
+	if err := WriteCompliancePDF(&buf, "NilVal", data); err != nil {
+		t.Fatalf("WriteCompliancePDF nil value+qualifier: %v", err)
+	}
+}
+
+// =========================================================================
+// formatLimitType
+// =========================================================================
 
 func TestFormatLimitType(t *testing.T) {
 	tests := []struct {
