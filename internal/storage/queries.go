@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -753,4 +754,232 @@ func (q *Queries) GetOrganizationIDForResult(ctx context.Context, resultID uuid.
 		JOIN facilities f ON ml.facility_id = f.id
 		WHERE sr.id = $1`, resultID).Scan(&orgID)
 	return orgID, err
+}
+
+// ListAllFacilities returns every active facility across all organizations.
+// Used by the alerts evaluator, which has no user context.
+func (q *Queries) ListAllFacilities(ctx context.Context) ([]Facility, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, organization_id, name, facility_type, address, latitude, longitude, active, created_at, updated_at
+		FROM facilities
+		WHERE active = true
+		ORDER BY organization_id, name`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Facility])
+}
+
+// Exceedance describes a sample result that violates a currently effective permit limit.
+// Purpose-built for the alerts evaluator — carries the IDs needed to create a targeted alert.
+type Exceedance struct {
+	SampleResultID       uuid.UUID `json:"sample_result_id" db:"sample_result_id"`
+	MonitoringLocationID uuid.UUID `json:"monitoring_location_id" db:"monitoring_location_id"`
+	FacilityID           uuid.UUID `json:"facility_id" db:"facility_id"`
+	OrganizationID       uuid.UUID `json:"organization_id" db:"organization_id"`
+	LocationName         string    `json:"location_name" db:"location_name"`
+	ParameterCode        string    `json:"parameter_code" db:"parameter_code"`
+	ParameterName        string    `json:"parameter_name" db:"parameter_name"`
+	ResultValue          float64   `json:"result_value" db:"result_value"`
+	UnitCode             string    `json:"unit_code" db:"unit_code"`
+	LimitType            string    `json:"limit_type" db:"limit_type"`
+	LimitValue           float64   `json:"limit_value" db:"limit_value"`
+	CollectedAt          time.Time `json:"collected_at" db:"collected_at"`
+}
+
+// ListFacilityExceedances returns sample results that currently exceed an effective permit limit.
+// Rows with NULL result_value are excluded (non-detects can't exceed a numeric limit).
+func (q *Queries) ListFacilityExceedances(ctx context.Context, facilityID uuid.UUID) ([]Exceedance, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT sr.id AS sample_result_id,
+		       ml.id AS monitoring_location_id,
+		       f.id  AS facility_id,
+		       f.organization_id,
+		       ml.name AS location_name,
+		       p.code  AS parameter_code,
+		       p.name  AS parameter_name,
+		       sr.result_value,
+		       u.code  AS unit_code,
+		       pl.limit_type, pl.limit_value,
+		       sr.collected_at
+		FROM sample_results sr
+		JOIN monitoring_locations ml ON sr.monitoring_location_id = ml.id
+		JOIN facilities f             ON ml.facility_id = f.id
+		JOIN parameters p             ON sr.parameter_id = p.id
+		JOIN units_of_measure u       ON sr.unit_id = u.id
+		JOIN permit_limits pl         ON pl.monitoring_location_id = sr.monitoring_location_id
+		    AND pl.parameter_id = sr.parameter_id
+		    AND sr.collected_at::date >= pl.effective_start
+		    AND (pl.effective_end IS NULL OR sr.collected_at::date <= pl.effective_end)
+		WHERE f.id = $1
+		  AND sr.result_value IS NOT NULL
+		  AND (
+		      (pl.limit_type LIKE '%max%' AND sr.result_value > pl.limit_value) OR
+		      (pl.limit_type LIKE '%min%' AND sr.result_value < pl.limit_value)
+		  )`, facilityID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Exceedance])
+}
+
+// ============================================================================
+// Alerts
+// ============================================================================
+
+// Alert represents a notification about a compliance or operational condition.
+type Alert struct {
+	ID             uuid.UUID       `json:"id"`
+	OrganizationID uuid.UUID       `json:"organization_id"`
+	FacilityID     uuid.UUID       `json:"facility_id"`
+	Type           string          `json:"type"`
+	Severity       string          `json:"severity"`
+	SubjectType    string          `json:"subject_type"`
+	SubjectID      uuid.UUID       `json:"subject_id"`
+	Message        string          `json:"message"`
+	Details        json.RawMessage `json:"details,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	DismissedAt    *time.Time      `json:"dismissed_at,omitempty"`
+	DismissedBy    *uuid.UUID      `json:"dismissed_by,omitempty"`
+}
+
+// AlertFilter controls which alerts are returned by ListAlerts.
+type AlertFilter struct {
+	FacilityID *uuid.UUID
+	Type       *string
+	Dismissed  *bool // nil = any state
+	Limit      int
+}
+
+// CreateAlertParams is the input for CreateAlert.
+type CreateAlertParams struct {
+	OrganizationID uuid.UUID
+	FacilityID     uuid.UUID
+	Type           string
+	Severity       string
+	SubjectType    string
+	SubjectID      uuid.UUID
+	Message        string
+	Details        json.RawMessage
+}
+
+// CreateAlert inserts a new alert. If an active (not dismissed) alert already exists
+// for the same (facility, type, subject), the insert is skipped and `created` is false.
+// The partial unique index `alerts_active_subject_idx` enforces this at the DB level.
+func (q *Queries) CreateAlert(ctx context.Context, p CreateAlertParams) (Alert, bool, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return Alert{}, false, fmt.Errorf("generate uuid: %w", err)
+	}
+
+	var a Alert
+	err = q.pool.QueryRow(ctx, `
+		INSERT INTO alerts (id, organization_id, facility_id, type, severity, subject_type, subject_id, message, details)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (facility_id, type, subject_type, subject_id) WHERE dismissed_at IS NULL
+		DO NOTHING
+		RETURNING id, organization_id, facility_id, type, severity, subject_type, subject_id,
+		          message, details, created_at, updated_at, dismissed_at, dismissed_by`,
+		id, p.OrganizationID, p.FacilityID, p.Type, p.Severity, p.SubjectType, p.SubjectID, p.Message, p.Details,
+	).Scan(
+		&a.ID, &a.OrganizationID, &a.FacilityID, &a.Type, &a.Severity, &a.SubjectType, &a.SubjectID,
+		&a.Message, &a.Details, &a.CreatedAt, &a.UpdatedAt, &a.DismissedAt, &a.DismissedBy,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Active duplicate — not an error. Caller decides what to do.
+		return Alert{}, false, nil
+	}
+	if err != nil {
+		return Alert{}, false, err
+	}
+	return a, true, nil
+}
+
+// ListAlerts returns alerts matching the filter, newest first.
+func (q *Queries) ListAlerts(ctx context.Context, f AlertFilter) ([]Alert, error) {
+	query := `
+		SELECT id, organization_id, facility_id, type, severity, subject_type, subject_id,
+		       message, details, created_at, updated_at, dismissed_at, dismissed_by
+		FROM alerts
+		WHERE 1=1`
+	args := []any{}
+	argN := 1
+
+	if f.FacilityID != nil {
+		query += fmt.Sprintf(" AND facility_id = $%d", argN)
+		args = append(args, *f.FacilityID)
+		argN++
+	}
+	if f.Type != nil {
+		query += fmt.Sprintf(" AND type = $%d", argN)
+		args = append(args, *f.Type)
+		argN++
+	}
+	if f.Dismissed != nil {
+		if *f.Dismissed {
+			query += " AND dismissed_at IS NOT NULL"
+		} else {
+			query += " AND dismissed_at IS NULL"
+		}
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	limit := f.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	query += fmt.Sprintf(" LIMIT $%d", argN)
+	args = append(args, limit)
+
+	rows, err := q.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	alerts := make([]Alert, 0)
+	for rows.Next() {
+		var a Alert
+		if err := rows.Scan(
+			&a.ID, &a.OrganizationID, &a.FacilityID, &a.Type, &a.Severity, &a.SubjectType, &a.SubjectID,
+			&a.Message, &a.Details, &a.CreatedAt, &a.UpdatedAt, &a.DismissedAt, &a.DismissedBy,
+		); err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, a)
+	}
+	return alerts, rows.Err()
+}
+
+// GetAlert retrieves a single alert by ID.
+func (q *Queries) GetAlert(ctx context.Context, id uuid.UUID) (Alert, error) {
+	var a Alert
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, organization_id, facility_id, type, severity, subject_type, subject_id,
+		       message, details, created_at, updated_at, dismissed_at, dismissed_by
+		FROM alerts
+		WHERE id = $1`, id,
+	).Scan(
+		&a.ID, &a.OrganizationID, &a.FacilityID, &a.Type, &a.Severity, &a.SubjectType, &a.SubjectID,
+		&a.Message, &a.Details, &a.CreatedAt, &a.UpdatedAt, &a.DismissedAt, &a.DismissedBy,
+	)
+	return a, err
+}
+
+// DismissAlert marks an alert as dismissed by the given user.
+// Returns the updated alert. If the alert is already dismissed, returns pgx.ErrNoRows.
+func (q *Queries) DismissAlert(ctx context.Context, id, userID uuid.UUID) (Alert, error) {
+	var a Alert
+	err := q.pool.QueryRow(ctx, `
+		UPDATE alerts
+		SET dismissed_at = now(), dismissed_by = $2, updated_at = now()
+		WHERE id = $1 AND dismissed_at IS NULL
+		RETURNING id, organization_id, facility_id, type, severity, subject_type, subject_id,
+		          message, details, created_at, updated_at, dismissed_at, dismissed_by`,
+		id, userID,
+	).Scan(
+		&a.ID, &a.OrganizationID, &a.FacilityID, &a.Type, &a.Severity, &a.SubjectType, &a.SubjectID,
+		&a.Message, &a.Details, &a.CreatedAt, &a.UpdatedAt, &a.DismissedAt, &a.DismissedBy,
+	)
+	return a, err
 }

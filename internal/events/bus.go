@@ -15,6 +15,8 @@ const (
 	SubjectSampleResultCreated  = "sample_result.created"
 	SubjectSampleResultReviewed = "sample_result.reviewed"
 	SubjectSampleResultApproved = "sample_result.approved"
+	SubjectAlertCreated         = "alert.created"
+	SubjectAlertDismissed       = "alert.dismissed"
 )
 
 // ChangeEvent represents a data change published to the event bus.

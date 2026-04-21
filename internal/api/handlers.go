@@ -597,6 +597,149 @@ func (h *handler) importSampleResults(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// ============================================================================
+// Alerts
+// ============================================================================
+
+func (h *handler) listAlerts(w http.ResponseWriter, r *http.Request) {
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	q := r.URL.Query()
+	filter := storage.AlertFilter{}
+
+	if v := q.Get("facility_id"); v != "" {
+		id, err := parseUUID(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid facility_id")
+			return
+		}
+		if !claims.HasFacilityAccess(id.String()) {
+			writeError(w, http.StatusForbidden, "no access to this facility")
+			return
+		}
+		filter.FacilityID = &id
+	}
+	if v := q.Get("type"); v != "" {
+		if v != "exceedance" && v != "overdue_calibration" {
+			writeError(w, http.StatusBadRequest, "invalid type")
+			return
+		}
+		filter.Type = &v
+	}
+	if v := q.Get("dismissed"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid dismissed, expected true/false")
+			return
+		}
+		filter.Dismissed = &b
+	}
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		filter.Limit = n
+	}
+
+	alerts, err := h.store.ListAlerts(r.Context(), filter)
+	if err != nil {
+		slog.Error("list alerts", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	// If the caller didn't scope by facility, filter the response to facilities
+	// the user has access to. Admins with org-wide roles see everything.
+	if filter.FacilityID == nil {
+		filtered := make([]storage.Alert, 0, len(alerts))
+		for _, a := range alerts {
+			if claims.HasFacilityAccess(a.FacilityID.String()) {
+				filtered = append(filtered, a)
+			}
+		}
+		alerts = filtered
+	}
+
+	writeJSON(w, http.StatusOK, alerts)
+}
+
+func (h *handler) dismissAlert(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	existing, err := h.store.GetAlert(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "alert not found")
+			return
+		}
+		slog.Error("get alert", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !claims.HasFacilityAccess(existing.FacilityID.String()) {
+		writeError(w, http.StatusForbidden, "no access to this facility")
+		return
+	}
+
+	after, err := h.store.DismissAlert(r.Context(), id, claims.UserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusConflict, "alert is already dismissed")
+			return
+		}
+		slog.Error("dismiss alert", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	h.publishAlertEvent(events.SubjectAlertDismissed, "update", after, &existing)
+	writeJSON(w, http.StatusOK, after)
+}
+
+// publishAlertEvent sends an alert change event to the bus for audit logging.
+func (h *handler) publishAlertEvent(subject, action string, after storage.Alert, before *storage.Alert) {
+	if h.bus == nil {
+		return
+	}
+	newJSON, _ := json.Marshal(after)
+	event := events.ChangeEvent{
+		Subject:        subject,
+		Timestamp:      time.Now(),
+		OrganizationID: after.OrganizationID,
+		TableName:      "alerts",
+		RecordID:       after.ID,
+		Action:         action,
+		ChangedBy:      uuid.Nil,
+		NewValues:      newJSON,
+	}
+	if before != nil {
+		oldJSON, _ := json.Marshal(*before)
+		event.OldValues = oldJSON
+	}
+	if after.DismissedBy != nil {
+		event.ChangedBy = *after.DismissedBy
+	}
+	if err := h.bus.Publish(event); err != nil {
+		slog.Error("publish alert event", "error", err, "subject", subject)
+	}
+}
+
 // publishResultEvent sends a change event for a sample result to NATS.
 // Failures are logged but do not block the HTTP response.
 func (h *handler) publishResultEvent(ctx context.Context, subject, action string, result storage.SampleResult, before *storage.SampleResult) {

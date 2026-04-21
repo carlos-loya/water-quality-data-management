@@ -113,6 +113,24 @@ func (m *mockStore) GetOrganizationIDForResult(context.Context, uuid.UUID) (uuid
 func (m *mockStore) ListAuditLog(context.Context, uuid.UUID) ([]storage.AuditEntry, error) {
 	panic("not implemented")
 }
+func (m *mockStore) ListAllFacilities(context.Context) ([]storage.Facility, error) {
+	panic("not implemented")
+}
+func (m *mockStore) ListFacilityExceedances(context.Context, uuid.UUID) ([]storage.Exceedance, error) {
+	panic("not implemented")
+}
+func (m *mockStore) CreateAlert(context.Context, storage.CreateAlertParams) (storage.Alert, bool, error) {
+	panic("not implemented")
+}
+func (m *mockStore) ListAlerts(context.Context, storage.AlertFilter) ([]storage.Alert, error) {
+	panic("not implemented")
+}
+func (m *mockStore) GetAlert(context.Context, uuid.UUID) (storage.Alert, error) {
+	panic("not implemented")
+}
+func (m *mockStore) DismissAlert(context.Context, uuid.UUID, uuid.UUID) (storage.Alert, error) {
+	panic("not implemented")
+}
 
 // --- test fixtures ---
 

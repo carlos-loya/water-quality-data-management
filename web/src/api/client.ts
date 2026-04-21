@@ -11,6 +11,8 @@ import type {
   InstrumentStatus,
   CalibrationRecord,
   AuditEntry,
+  Alert,
+  AlertFilter,
 } from "./types";
 
 import { getToken, clearAuth } from "./auth";
@@ -120,5 +122,19 @@ export const api = {
 
   approveSampleResult(id: string) {
     return patch<SampleResult>(`/sample-results/${id}/approve`, {});
+  },
+
+  listAlerts(filter: AlertFilter = {}) {
+    const params: Record<string, string> = {};
+    if (filter.facility_id) params.facility_id = filter.facility_id;
+    if (filter.type) params.type = filter.type;
+    if (filter.dismissed !== undefined) params.dismissed = String(filter.dismissed);
+    if (filter.limit) params.limit = String(filter.limit);
+    const query = new URLSearchParams(params).toString();
+    return get<Alert[]>(`/alerts${query ? `?${query}` : ""}`);
+  },
+
+  dismissAlert(id: string) {
+    return post<Alert>(`/alerts/${id}/dismiss`, {});
   },
 };

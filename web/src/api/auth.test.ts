@@ -4,6 +4,7 @@ import {
   hasAnyRole,
   canReview,
   canApprove,
+  canDismissAlert,
   primaryRole,
   getToken,
   getUser,
@@ -105,6 +106,28 @@ describe("canApprove", () => {
   });
   it("returns false for operator", () => {
     expect(canApprove(makeUser([{ role: "operator" }]))).toBe(false);
+  });
+});
+
+// =========================================================================
+// canDismissAlert
+// =========================================================================
+
+describe("canDismissAlert", () => {
+  it("returns true for admin", () => {
+    expect(canDismissAlert(makeUser([{ role: "admin" }]))).toBe(true);
+  });
+  it("returns true for operator", () => {
+    expect(canDismissAlert(makeUser([{ role: "operator" }]))).toBe(true);
+  });
+  it("returns true for reviewer", () => {
+    expect(canDismissAlert(makeUser([{ role: "reviewer" }]))).toBe(true);
+  });
+  it("returns false for viewer", () => {
+    expect(canDismissAlert(makeUser([{ role: "viewer" }]))).toBe(false);
+  });
+  it("returns false for no roles", () => {
+    expect(canDismissAlert(makeUser([]))).toBe(false);
   });
 });
 

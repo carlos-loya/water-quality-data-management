@@ -237,3 +237,70 @@ describe("api.approveSampleResult", () => {
     expect(init.method).toBe("PATCH");
   });
 });
+
+// =========================================================================
+// Alerts
+// =========================================================================
+
+describe("api.listAlerts", () => {
+  it("requests /alerts with no query when filter is empty", async () => {
+    mockFetch([]);
+    await api.listAlerts();
+    expect(lastFetchCall()[0]).toBe("/api/v1/alerts");
+  });
+
+  it("includes facility_id filter in query", async () => {
+    mockFetch([]);
+    await api.listAlerts({ facility_id: "fac-1" });
+    const url = lastFetchCall()[0];
+    expect(url).toContain("/api/v1/alerts?");
+    expect(url).toContain("facility_id=fac-1");
+  });
+
+  it("serializes type, dismissed, and limit", async () => {
+    mockFetch([]);
+    await api.listAlerts({ type: "exceedance", dismissed: false, limit: 25 });
+    const url = lastFetchCall()[0];
+    expect(url).toContain("type=exceedance");
+    expect(url).toContain("dismissed=false");
+    expect(url).toContain("limit=25");
+  });
+
+  it("includes dismissed=true explicitly", async () => {
+    mockFetch([]);
+    await api.listAlerts({ dismissed: true });
+    expect(lastFetchCall()[0]).toContain("dismissed=true");
+  });
+
+  it("sends GET with auth header when token present", async () => {
+    store["wqm_token"] = "tok-1";
+    mockFetch([]);
+    await api.listAlerts({ facility_id: "fac-1" });
+    const [, init] = lastFetchCall();
+    expect(init.method).toBeUndefined();
+    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer tok-1");
+  });
+});
+
+describe("api.dismissAlert", () => {
+  it("sends POST to correct URL", async () => {
+    mockFetch({ id: "a-1", dismissed_at: "2026-04-20T00:00:00Z" });
+    await api.dismissAlert("a-1");
+    const [url, init] = lastFetchCall();
+    expect(url).toBe("/api/v1/alerts/a-1/dismiss");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
+
+  it("throws error from body on failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ error: "already dismissed" }),
+      })
+    );
+    await expect(api.dismissAlert("a-1")).rejects.toThrow("already dismissed");
+  });
+});
