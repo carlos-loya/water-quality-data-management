@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,12 +20,25 @@ import (
 	"github.com/carlos-loya/water-quality-data-management/internal/ingestion"
 	"github.com/carlos-loya/water-quality-data-management/internal/reports"
 	"github.com/carlos-loya/water-quality-data-management/internal/storage"
+	"github.com/carlos-loya/water-quality-data-management/internal/storage/blob"
 )
 
 type handler struct {
 	store     storage.Store
 	bus       *events.Bus
+	blobs     blob.Store
 	jwtSecret string
+}
+
+const maxUploadBytes = 10 * 1024 * 1024 // 10 MiB
+
+var allowedAttachmentTypes = map[string]bool{
+	"application/pdf":  true,
+	"image/png":        true,
+	"image/jpeg":       true,
+	"text/csv":         true,
+	"application/vnd.ms-excel": true,
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {
@@ -295,14 +310,16 @@ func (h *handler) createSampleResult(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "a numeric result_value is required for this parameter")
 			return
 		}
+		// Out-of-range values are permitted only with a documented override reason.
+		// This keeps the data defensible: we record the measurement AND why the
+		// operator chose to save it despite the rule.
 		if params.ResultValue != nil {
 			v := *params.ResultValue
-			if rule.MinValue != nil && v < *rule.MinValue {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("result_value %.4g is below minimum %.4g", v, *rule.MinValue))
-				return
-			}
-			if rule.MaxValue != nil && v > *rule.MaxValue {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("result_value %.4g exceeds maximum %.4g", v, *rule.MaxValue))
+			outOfRange := (rule.MinValue != nil && v < *rule.MinValue) ||
+				(rule.MaxValue != nil && v > *rule.MaxValue)
+			if outOfRange && (params.OverrideReason == nil || strings.TrimSpace(*params.OverrideReason) == "") {
+				writeError(w, http.StatusBadRequest,
+					fmt.Sprintf("result_value %.4g is outside validation range; override_reason is required to save", v))
 				return
 			}
 		}
@@ -790,6 +807,435 @@ func checkFacilityAccess(w http.ResponseWriter, r *http.Request, facilityID uuid
 		return false
 	}
 	return true
+}
+
+// =========================================================================
+// Attachments
+// =========================================================================
+
+func (h *handler) uploadAttachment(w http.ResponseWriter, r *http.Request) {
+	resultID, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	sr, err := h.store.GetSampleResult(r.Context(), resultID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "sample result not found")
+			return
+		}
+		slog.Error("get sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	facilityID, err := h.store.GetFacilityIDForLocation(r.Context(), sr.MonitoringLocationID)
+	if err != nil {
+		slog.Error("resolve facility", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !claims.HasFacilityAccess(facilityID.String()) {
+		writeError(w, http.StatusForbidden, "no access to this facility")
+		return
+	}
+
+	// Cap the whole request body so a runaway upload can't blow up memory.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+(1<<10))
+	if err := r.ParseMultipartForm(maxUploadBytes + (1 << 10)); err != nil {
+		writeError(w, http.StatusBadRequest, "upload too large or malformed")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file field is required")
+		return
+	}
+	defer file.Close()
+
+	if header.Size <= 0 {
+		writeError(w, http.StatusBadRequest, "empty file")
+		return
+	}
+	if header.Size > maxUploadBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "file exceeds 10MB limit")
+		return
+	}
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if !allowedAttachmentTypes[contentType] {
+		writeError(w, http.StatusUnsupportedMediaType, fmt.Sprintf("content type %q not allowed", contentType))
+		return
+	}
+
+	key := uuid.NewString()
+	if err := h.blobs.Put(r.Context(), key, contentType, header.Size, file); err != nil {
+		slog.Error("blob put", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	att, err := h.store.CreateAttachment(r.Context(), storage.CreateAttachmentParams{
+		OrganizationID: claims.OrganizationID,
+		SubjectType:    "sample_result",
+		SubjectID:      resultID,
+		Filename:       header.Filename,
+		ContentType:    contentType,
+		SizeBytes:      header.Size,
+		StorageKey:     key,
+		UploadedBy:     claims.UserID,
+	})
+	if err != nil {
+		// Best-effort: the blob was written but metadata failed, so delete it.
+		_ = h.blobs.Delete(r.Context(), key)
+		slog.Error("create attachment", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	h.publishAttachmentEvent(events.SubjectAttachmentCreated, "insert", att, nil, claims.UserID)
+	writeJSON(w, http.StatusCreated, att)
+}
+
+func (h *handler) listAttachments(w http.ResponseWriter, r *http.Request) {
+	resultID, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	sr, err := h.store.GetSampleResult(r.Context(), resultID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "sample result not found")
+			return
+		}
+		slog.Error("get sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	facilityID, err := h.store.GetFacilityIDForLocation(r.Context(), sr.MonitoringLocationID)
+	if err != nil {
+		slog.Error("resolve facility", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !claims.HasFacilityAccess(facilityID.String()) {
+		writeError(w, http.StatusForbidden, "no access to this facility")
+		return
+	}
+
+	atts, err := h.store.ListAttachments(r.Context(), "sample_result", resultID)
+	if err != nil {
+		slog.Error("list attachments", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if atts == nil {
+		atts = []storage.Attachment{}
+	}
+	writeJSON(w, http.StatusOK, atts)
+}
+
+func (h *handler) downloadAttachment(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	att, err := h.store.GetAttachment(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "attachment not found")
+			return
+		}
+		slog.Error("get attachment", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if att.DeletedAt != nil {
+		writeError(w, http.StatusNotFound, "attachment not found")
+		return
+	}
+
+	if err := h.checkAttachmentAccess(r.Context(), claims, att); err != nil {
+		writeError(w, http.StatusForbidden, "no access to this attachment")
+		return
+	}
+
+	rc, err := h.blobs.Open(r.Context(), att.StorageKey)
+	if err != nil {
+		if errors.Is(err, blob.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "attachment data missing")
+			return
+		}
+		slog.Error("blob open", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", att.ContentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(att.SizeBytes, 10))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, att.Filename))
+	if _, err := io.Copy(w, rc); err != nil {
+		// Response has already started; just log.
+		slog.Warn("attachment stream", "error", err)
+	}
+}
+
+func (h *handler) deleteAttachment(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	existing, err := h.store.GetAttachment(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "attachment not found")
+			return
+		}
+		slog.Error("get attachment", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeError(w, http.StatusConflict, "attachment already deleted")
+		return
+	}
+
+	if err := h.checkAttachmentAccess(r.Context(), claims, existing); err != nil {
+		writeError(w, http.StatusForbidden, "no access to this attachment")
+		return
+	}
+
+	after, err := h.store.SoftDeleteAttachment(r.Context(), id, claims.UserID)
+	if err != nil {
+		slog.Error("soft delete attachment", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	h.publishAttachmentEvent(events.SubjectAttachmentDeleted, "delete", after, &existing, claims.UserID)
+	writeJSON(w, http.StatusOK, after)
+}
+
+// checkAttachmentAccess verifies that the current user's roles permit access
+// to the facility owning the attachment's subject.
+func (h *handler) checkAttachmentAccess(ctx context.Context, claims *auth.Claims, att storage.Attachment) error {
+	if att.SubjectType != "sample_result" {
+		return fmt.Errorf("unsupported subject type")
+	}
+	sr, err := h.store.GetSampleResult(ctx, att.SubjectID)
+	if err != nil {
+		return err
+	}
+	facilityID, err := h.store.GetFacilityIDForLocation(ctx, sr.MonitoringLocationID)
+	if err != nil {
+		return err
+	}
+	if !claims.HasFacilityAccess(facilityID.String()) {
+		return fmt.Errorf("forbidden")
+	}
+	return nil
+}
+
+func (h *handler) publishAttachmentEvent(subject, action string, after storage.Attachment, before *storage.Attachment, changedBy uuid.UUID) {
+	if h.bus == nil {
+		return
+	}
+	newJSON, _ := json.Marshal(after)
+	event := events.ChangeEvent{
+		Subject:        subject,
+		Timestamp:      time.Now(),
+		OrganizationID: after.OrganizationID,
+		TableName:      "attachments",
+		RecordID:       after.ID,
+		Action:         action,
+		ChangedBy:      changedBy,
+		NewValues:      newJSON,
+	}
+	if before != nil {
+		oldJSON, _ := json.Marshal(*before)
+		event.OldValues = oldJSON
+	}
+	if err := h.bus.Publish(event); err != nil {
+		slog.Error("publish attachment event", "error", err, "subject", subject)
+	}
+}
+
+// =========================================================================
+// Comments
+// =========================================================================
+
+func (h *handler) createComment(w http.ResponseWriter, r *http.Request) {
+	resultID, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	var body struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	body.Body = strings.TrimSpace(body.Body)
+	if body.Body == "" {
+		writeError(w, http.StatusBadRequest, "body is required")
+		return
+	}
+	if len(body.Body) > 4000 {
+		writeError(w, http.StatusBadRequest, "body exceeds 4000 characters")
+		return
+	}
+
+	sr, err := h.store.GetSampleResult(r.Context(), resultID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "sample result not found")
+			return
+		}
+		slog.Error("get sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	facilityID, err := h.store.GetFacilityIDForLocation(r.Context(), sr.MonitoringLocationID)
+	if err != nil {
+		slog.Error("resolve facility", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !claims.HasFacilityAccess(facilityID.String()) {
+		writeError(w, http.StatusForbidden, "no access to this facility")
+		return
+	}
+
+	c, err := h.store.CreateComment(r.Context(), storage.CreateCommentParams{
+		OrganizationID: claims.OrganizationID,
+		SubjectType:    "sample_result",
+		SubjectID:      resultID,
+		AuthorID:       claims.UserID,
+		Body:           body.Body,
+	})
+	if err != nil {
+		slog.Error("create comment", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	h.publishCommentEvent(c, claims.UserID)
+	writeJSON(w, http.StatusCreated, c)
+}
+
+func (h *handler) listComments(w http.ResponseWriter, r *http.Request) {
+	resultID, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	claims := auth.UserFrom(r.Context())
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	sr, err := h.store.GetSampleResult(r.Context(), resultID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "sample result not found")
+			return
+		}
+		slog.Error("get sample result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	facilityID, err := h.store.GetFacilityIDForLocation(r.Context(), sr.MonitoringLocationID)
+	if err != nil {
+		slog.Error("resolve facility", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !claims.HasFacilityAccess(facilityID.String()) {
+		writeError(w, http.StatusForbidden, "no access to this facility")
+		return
+	}
+
+	comments, err := h.store.ListComments(r.Context(), "sample_result", resultID)
+	if err != nil {
+		slog.Error("list comments", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if comments == nil {
+		comments = []storage.Comment{}
+	}
+	writeJSON(w, http.StatusOK, comments)
+}
+
+func (h *handler) publishCommentEvent(c storage.Comment, changedBy uuid.UUID) {
+	if h.bus == nil {
+		return
+	}
+	newJSON, _ := json.Marshal(c)
+	event := events.ChangeEvent{
+		Subject:        events.SubjectCommentCreated,
+		Timestamp:      time.Now(),
+		OrganizationID: c.OrganizationID,
+		TableName:      "comments",
+		RecordID:       c.ID,
+		Action:         "insert",
+		ChangedBy:      changedBy,
+		NewValues:      newJSON,
+	}
+	if err := h.bus.Publish(event); err != nil {
+		slog.Error("publish comment event", "error", err)
+	}
 }
 
 // --- helpers ---

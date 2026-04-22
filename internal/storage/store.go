@@ -40,4 +40,12 @@ type Store interface {
 	ListAlerts(ctx context.Context, f AlertFilter) ([]Alert, error)
 	GetAlert(ctx context.Context, id uuid.UUID) (Alert, error)
 	DismissAlert(ctx context.Context, id, userID uuid.UUID) (Alert, error)
+
+	// Attachments & comments
+	CreateAttachment(ctx context.Context, p CreateAttachmentParams) (Attachment, error)
+	ListAttachments(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]Attachment, error)
+	GetAttachment(ctx context.Context, id uuid.UUID) (Attachment, error)
+	SoftDeleteAttachment(ctx context.Context, id, userID uuid.UUID) (Attachment, error)
+	CreateComment(ctx context.Context, p CreateCommentParams) (Comment, error)
+	ListComments(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]Comment, error)
 }

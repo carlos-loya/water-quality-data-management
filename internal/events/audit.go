@@ -19,7 +19,7 @@ type AuditConsumer struct {
 func NewAuditConsumer(pool *pgxpool.Pool, bus *Bus) (*AuditConsumer, error) {
 	c := &AuditConsumer{pool: pool, bus: bus}
 
-	for _, subject := range []string{"sample_result.*", "alert.*"} {
+	for _, subject := range []string{"sample_result.*", "alert.*", "attachment.*", "comment.*"} {
 		if _, err := bus.Subscribe(subject, c.handle); err != nil {
 			return nil, err
 		}

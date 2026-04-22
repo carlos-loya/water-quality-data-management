@@ -17,5 +17,36 @@ services:
       - "8222:8222"
     command: ["--jetstream", "--http_port", "8222"]
 
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: wqm_dev
+      MINIO_ROOT_PASSWORD: wqm_dev_secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 wqm_dev wqm_dev_secret &&
+      mc mb --ignore-existing local/wqm-attachments &&
+      echo 'minio bootstrap complete'
+      "
+    restart: "no"
+
 volumes:
   pgdata:
+  miniodata:

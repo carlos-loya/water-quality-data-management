@@ -304,3 +304,173 @@ describe("api.dismissAlert", () => {
     await expect(api.dismissAlert("a-1")).rejects.toThrow("already dismissed");
   });
 });
+
+// =========================================================================
+// Attachments
+// =========================================================================
+
+describe("api.listAttachments", () => {
+  it("constructs correct URL", async () => {
+    mockFetch([]);
+    await api.listAttachments("sr-1");
+    expect(lastFetchCall()[0]).toBe("/api/v1/sample-results/sr-1/attachments");
+  });
+});
+
+describe("api.uploadAttachment", () => {
+  it("sends POST with FormData and no Content-Type header (browser sets boundary)", async () => {
+    store["wqm_token"] = "tok-1";
+    mockFetch({ id: "a-1", filename: "chain.pdf" });
+    const file = new File(["hello"], "chain.pdf", { type: "application/pdf" });
+    await api.uploadAttachment("sr-1", file);
+
+    const [url, init] = lastFetchCall();
+    expect(url).toBe("/api/v1/sample-results/sr-1/attachments");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("file")).toBeInstanceOf(File);
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBeUndefined();
+    expect(headers["Authorization"]).toBe("Bearer tok-1");
+  });
+
+  it("throws error from body on failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 415,
+        json: () => Promise.resolve({ error: "content type not allowed" }),
+      })
+    );
+    const file = new File(["x"], "bad.sh", { type: "application/x-sh" });
+    await expect(api.uploadAttachment("sr-1", file)).rejects.toThrow(
+      "content type not allowed"
+    );
+  });
+});
+
+describe("api.attachmentDownloadURL", () => {
+  it("returns the canonical download path", () => {
+    expect(api.attachmentDownloadURL("a-1")).toBe("/api/v1/attachments/a-1");
+  });
+});
+
+describe("api.downloadAttachment", () => {
+  it("fetches and returns a Blob", async () => {
+    const fakeBlob = new Blob(["hello"]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve(fakeBlob),
+      })
+    );
+    const out = await api.downloadAttachment("a-1");
+    expect(out).toBe(fakeBlob);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe("/api/v1/attachments/a-1");
+  });
+
+  it("throws body error on failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ error: "attachment not found" }),
+      })
+    );
+    await expect(api.downloadAttachment("missing")).rejects.toThrow(
+      "attachment not found"
+    );
+  });
+});
+
+describe("api.deleteAttachment", () => {
+  it("sends DELETE to correct URL", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 204,
+        json: () => Promise.resolve({}),
+      })
+    );
+    await api.deleteAttachment("a-1");
+    const [url, init] = lastFetchCall();
+    expect(url).toBe("/api/v1/attachments/a-1");
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("throws 409 error for already-deleted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ error: "attachment already deleted" }),
+      })
+    );
+    await expect(api.deleteAttachment("a-1")).rejects.toThrow(
+      "attachment already deleted"
+    );
+  });
+});
+
+// =========================================================================
+// Comments
+// =========================================================================
+
+describe("api.listComments", () => {
+  it("constructs correct URL", async () => {
+    mockFetch([]);
+    await api.listComments("sr-1");
+    expect(lastFetchCall()[0]).toBe("/api/v1/sample-results/sr-1/comments");
+  });
+});
+
+describe("api.createComment", () => {
+  it("POSTs the body under a { body } payload", async () => {
+    mockFetch({ id: "c-1", body: "looks good" });
+    await api.createComment("sr-1", "looks good");
+    const [url, init] = lastFetchCall();
+    expect(url).toBe("/api/v1/sample-results/sr-1/comments");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "application/json"
+    );
+    expect(JSON.parse(init.body as string)).toEqual({ body: "looks good" });
+  });
+
+  it("surfaces validation errors from the server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: "body is required" }),
+      })
+    );
+    await expect(api.createComment("sr-1", "")).rejects.toThrow("body is required");
+  });
+});
+
+describe("api.createSampleResult with override_reason", () => {
+  it("sends override_reason through the body", async () => {
+    mockFetch({ id: "sr-new" });
+    const input: import("./types").CreateSampleResultInput = {
+      monitoring_location_id: "loc-1",
+      parameter_id: "param-1",
+      unit_id: "unit-1",
+      collected_at: "2026-04-01T00:00:00Z",
+      entered_by: "user-1",
+      result_value: 42,
+      source: "manual",
+      override_reason: "verified via duplicate sample",
+    };
+    await api.createSampleResult(input);
+    const body = JSON.parse(lastFetchCall()[1].body as string);
+    expect(body.override_reason).toBe("verified via duplicate sample");
+  });
+});

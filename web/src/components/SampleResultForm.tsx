@@ -33,6 +33,7 @@ export function SampleResultForm({
   const [resultValue, setResultValue] = useState("");
   const [resultQualifier, setResultQualifier] = useState("");
   const [notes, setNotes] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
 
   const { data: units } = useQuery({
     queryKey: ["units", orgId],
@@ -68,18 +69,26 @@ export function SampleResultForm({
     }
   }
 
-  // Derive validation error from current state (no effect needed)
-  const valueError = useMemo(() => {
+  // Range check: produces a soft warning (overridable) for out-of-range values
+  // and a hard error for precision/format problems.
+  const rangeWarning = useMemo(() => {
     if (!resultValue || !activeRule) return null;
     const v = parseFloat(resultValue);
-    if (isNaN(v)) return "Must be a number";
+    if (isNaN(v)) return null;
     if (activeRule.min_value !== null && v < activeRule.min_value) {
       return `Below minimum (${activeRule.min_value})`;
     }
     if (activeRule.max_value !== null && v > activeRule.max_value) {
       return `Exceeds maximum (${activeRule.max_value})`;
     }
-    if (activeRule.precision_digits !== null) {
+    return null;
+  }, [resultValue, activeRule]);
+
+  const valueError = useMemo(() => {
+    if (!resultValue) return null;
+    const v = parseFloat(resultValue);
+    if (isNaN(v)) return "Must be a number";
+    if (activeRule?.precision_digits !== null && activeRule?.precision_digits !== undefined) {
       const parts = resultValue.split(".");
       if (parts[1] && parts[1].length > activeRule.precision_digits) {
         return `Max ${activeRule.precision_digits} decimal place(s)`;
@@ -88,9 +97,12 @@ export function SampleResultForm({
     return null;
   }, [resultValue, activeRule]);
 
+  const overrideRequired = !!rangeWarning && !resultQualifier;
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (valueError) return;
+    if (overrideRequired && !overrideReason.trim()) return;
 
     const input: CreateSampleResultInput = {
       monitoring_location_id: locationId,
@@ -114,6 +126,10 @@ export function SampleResultForm({
       input.notes = notes.trim();
     }
 
+    if (overrideRequired && overrideReason.trim()) {
+      input.override_reason = overrideReason.trim();
+    }
+
     onSubmit(input);
   }
 
@@ -125,7 +141,8 @@ export function SampleResultForm({
     unitId &&
     collectedAt &&
     (resultValue || resultQualifier) &&
-    !valueError;
+    !valueError &&
+    (!overrideRequired || overrideReason.trim().length > 0);
 
   // Build hint text for value field
   function rangeHint(): string | null {
@@ -241,6 +258,8 @@ export function SampleResultForm({
               className={`mt-1 block w-full rounded border px-3 py-1.5 text-sm font-mono ${
                 valueError
                   ? "border-red-400 bg-red-50"
+                  : overrideRequired
+                  ? "border-amber-400 bg-amber-50"
                   : "border-gray-300"
               }`}
             />
@@ -248,7 +267,12 @@ export function SampleResultForm({
           {valueError && (
             <p className="mt-1 text-xs text-red-600">{valueError}</p>
           )}
-          {!valueError && rangeHint() && (
+          {!valueError && overrideRequired && (
+            <p className="mt-1 text-xs text-amber-700">
+              {rangeWarning} — override reason required below
+            </p>
+          )}
+          {!valueError && !overrideRequired && rangeHint() && (
             <p className="mt-1 text-xs text-gray-400">{rangeHint()}</p>
           )}
         </div>
@@ -279,6 +303,25 @@ export function SampleResultForm({
             className="mt-1 block w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
           />
         </label>
+
+        {overrideRequired && (
+          <label className="block sm:col-span-2 lg:col-span-3">
+            <span className="text-xs font-medium text-amber-800">
+              Override reason *
+            </span>
+            <textarea
+              required
+              rows={2}
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+              placeholder="Explain why this out-of-range value is defensible (e.g., verified with duplicate sample, matrix interference, etc.)"
+              className="mt-1 block w-full rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-amber-700">
+              Required because the value is outside the configured validation range.
+            </p>
+          </label>
+        )}
       </div>
 
       <div className="mt-4 flex items-center gap-2">

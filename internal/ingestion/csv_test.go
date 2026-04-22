@@ -131,6 +131,24 @@ func (m *mockStore) GetAlert(context.Context, uuid.UUID) (storage.Alert, error) 
 func (m *mockStore) DismissAlert(context.Context, uuid.UUID, uuid.UUID) (storage.Alert, error) {
 	panic("not implemented")
 }
+func (m *mockStore) CreateAttachment(context.Context, storage.CreateAttachmentParams) (storage.Attachment, error) {
+	panic("not implemented")
+}
+func (m *mockStore) ListAttachments(context.Context, string, uuid.UUID) ([]storage.Attachment, error) {
+	panic("not implemented")
+}
+func (m *mockStore) GetAttachment(context.Context, uuid.UUID) (storage.Attachment, error) {
+	panic("not implemented")
+}
+func (m *mockStore) SoftDeleteAttachment(context.Context, uuid.UUID, uuid.UUID) (storage.Attachment, error) {
+	panic("not implemented")
+}
+func (m *mockStore) CreateComment(context.Context, storage.CreateCommentParams) (storage.Comment, error) {
+	panic("not implemented")
+}
+func (m *mockStore) ListComments(context.Context, string, uuid.UUID) ([]storage.Comment, error) {
+	panic("not implemented")
+}
 
 // --- test fixtures ---
 

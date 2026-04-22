@@ -62,6 +62,7 @@ export interface CreateSampleResultInput {
   entered_by: string;
   source: string;
   notes?: string;
+  override_reason?: string;
 }
 
 export interface SampleResult {
@@ -85,8 +86,32 @@ export interface SampleResult {
   source: string;
   source_reference?: string;
   notes?: string;
+  override_reason?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface Attachment {
+  id: string;
+  subject_type: string;
+  subject_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  storage_key: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
+export interface Comment {
+  id: string;
+  subject_type: string;
+  subject_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
 }
 
 export interface ComplianceResult {
