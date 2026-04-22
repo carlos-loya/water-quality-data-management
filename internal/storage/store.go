@@ -32,4 +32,12 @@ type Store interface {
 	ListInstrumentStatuses(ctx context.Context, facilityID uuid.UUID) ([]InstrumentStatus, error)
 	GetOrganizationIDForResult(ctx context.Context, resultID uuid.UUID) (uuid.UUID, error)
 	ListAuditLog(ctx context.Context, recordID uuid.UUID) ([]AuditEntry, error)
+
+	// Alerts
+	ListAllFacilities(ctx context.Context) ([]Facility, error)
+	ListFacilityExceedances(ctx context.Context, facilityID uuid.UUID) ([]Exceedance, error)
+	CreateAlert(ctx context.Context, p CreateAlertParams) (Alert, bool, error)
+	ListAlerts(ctx context.Context, f AlertFilter) ([]Alert, error)
+	GetAlert(ctx context.Context, id uuid.UUID) (Alert, error)
+	DismissAlert(ctx context.Context, id, userID uuid.UUID) (Alert, error)
 }

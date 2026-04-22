@@ -15,16 +15,17 @@ type AuditConsumer struct {
 }
 
 // NewAuditConsumer creates and starts the audit log consumer.
-// It subscribes to all sample_result.* events.
+// It subscribes to sample_result.* and alert.* events.
 func NewAuditConsumer(pool *pgxpool.Pool, bus *Bus) (*AuditConsumer, error) {
 	c := &AuditConsumer{pool: pool, bus: bus}
 
-	_, err := bus.Subscribe("sample_result.*", c.handle)
-	if err != nil {
-		return nil, err
+	for _, subject := range []string{"sample_result.*", "alert.*"} {
+		if _, err := bus.Subscribe(subject, c.handle); err != nil {
+			return nil, err
+		}
+		slog.Info("audit consumer subscribed", "subject", subject)
 	}
 
-	slog.Info("audit consumer started", "subject", "sample_result.*")
 	return c, nil
 }
 

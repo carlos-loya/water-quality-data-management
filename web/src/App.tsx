@@ -1,25 +1,38 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { getUser, clearAuth, primaryRole, type AuthUser } from "./api/auth";
+import { api } from "./api/client";
 import { LoginPage } from "./components/LoginPage";
 import { FacilitySelector } from "./components/FacilitySelector";
 import { SampleResultsTable } from "./components/SampleResultsTable";
 import { ComplianceView } from "./components/ComplianceView";
 import { TrendingCharts } from "./components/TrendingCharts";
 import { InstrumentsView } from "./components/InstrumentsView";
+import { AlertsView } from "./components/AlertsView";
 
-type Tab = "results" | "trending" | "compliance" | "instruments";
+type Tab = "results" | "trending" | "compliance" | "instruments" | "alerts";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "results", label: "Sample Results" },
   { key: "trending", label: "Trending" },
   { key: "compliance", label: "Compliance" },
   { key: "instruments", label: "Instruments" },
+  { key: "alerts", label: "Alerts" },
 ];
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(getUser);
   const [facilityId, setFacilityId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("results");
+
+  const { data: activeAlerts } = useQuery({
+    queryKey: ["alerts", { facility_id: facilityId ?? "", dismissed: false }],
+    queryFn: () =>
+      api.listAlerts({ facility_id: facilityId ?? undefined, dismissed: false }),
+    enabled: !!user && !!facilityId,
+    refetchInterval: 60_000,
+  });
+  const alertCount = activeAlerts?.length ?? 0;
 
   if (!user) {
     return <LoginPage onLogin={() => setUser(getUser())} />;
@@ -81,13 +94,18 @@ function App() {
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={`px-4 py-2 text-sm font-medium ${
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium ${
                     tab === t.key
                       ? "border-b-2 border-blue-500 text-blue-600"
                       : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
                   {t.label}
+                  {t.key === "alerts" && alertCount > 0 && (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      {alertCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -103,6 +121,9 @@ function App() {
             )}
             {tab === "instruments" && (
               <InstrumentsView facilityId={facilityId} />
+            )}
+            {tab === "alerts" && (
+              <AlertsView facilityId={facilityId} user={user} />
             )}
           </>
         )}

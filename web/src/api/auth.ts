@@ -30,6 +30,10 @@ export function canApprove(user: AuthUser): boolean {
   return hasRole(user, "admin");
 }
 
+export function canDismissAlert(user: AuthUser): boolean {
+  return hasAnyRole(user, ["admin", "operator", "reviewer"]);
+}
+
 export function primaryRole(user: AuthUser): string {
   const order = ["admin", "reviewer", "operator", "viewer"];
   for (const role of order) {

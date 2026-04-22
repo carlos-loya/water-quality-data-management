@@ -172,3 +172,30 @@ export interface AuditEntry {
   changed_at: string;
   reason?: string;
 }
+
+export type AlertType = "exceedance" | "overdue_calibration";
+export type AlertSeverity = "info" | "warning" | "critical";
+export type AlertSubjectType = "sample_result" | "instrument";
+
+export interface Alert {
+  id: string;
+  organization_id: string;
+  facility_id: string;
+  type: AlertType;
+  severity: AlertSeverity;
+  subject_type: AlertSubjectType;
+  subject_id: string;
+  message: string;
+  details?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  dismissed_at?: string;
+  dismissed_by?: string;
+}
+
+export interface AlertFilter {
+  facility_id?: string;
+  type?: AlertType;
+  dismissed?: boolean;
+  limit?: number;
+}

@@ -36,6 +36,8 @@ func NewRouter(store storage.Store, bus *events.Bus, jwtSecret string) http.Hand
 	protected.HandleFunc("GET /api/v1/facilities/{facility_id}/reports/compliance.xlsx", h.complianceExcel)
 	protected.HandleFunc("GET /api/v1/facilities/{facility_id}/reports/compliance.pdf", h.compliancePDF)
 	protected.HandleFunc("GET /api/v1/audit-log/{record_id}", h.listAuditLog)
+	protected.HandleFunc("GET /api/v1/alerts", h.listAlerts)
+	protected.HandleFunc("POST /api/v1/alerts/{id}/dismiss", requireAnyRole([]string{"admin", "operator", "reviewer"}, h.dismissAlert))
 
 	mux.Handle("/api/v1/", withAuth(jwtSecret, protected))
 

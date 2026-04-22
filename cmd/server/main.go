@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/carlos-loya/water-quality-data-management/internal/alerts"
 	"github.com/carlos-loya/water-quality-data-management/internal/api"
 	"github.com/carlos-loya/water-quality-data-management/internal/events"
 	"github.com/carlos-loya/water-quality-data-management/internal/storage"
@@ -22,6 +23,7 @@ func main() {
 	natsURL := envOr("NATS_URL", "nats://localhost:4222")
 	jwtSecret := envOr("JWT_SECRET", "dev-secret-change-in-production")
 	addr := envOr("ADDR", ":8080")
+	alertInterval := parseDuration(envOr("ALERT_EVAL_INTERVAL", "5m"), 5*time.Minute)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -52,6 +54,11 @@ func main() {
 	}
 
 	queries := storage.New(db)
+
+	// Start the alerts evaluator — scans exceedances + overdue calibrations on a ticker.
+	evaluator := alerts.NewEvaluator(queries, bus, alertInterval)
+	go evaluator.Run(ctx)
+
 	router := api.NewRouter(queries, bus, jwtSecret)
 
 	srv := &http.Server{
@@ -86,4 +93,13 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func parseDuration(s string, fallback time.Duration) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		slog.Warn("invalid duration, using fallback", "value", s, "fallback", fallback)
+		return fallback
+	}
+	return d
 }

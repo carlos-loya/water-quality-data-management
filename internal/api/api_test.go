@@ -47,6 +47,12 @@ type mockStore struct {
 	listCalibrationRecordsFn   func(ctx context.Context, instrumentID uuid.UUID) ([]storage.CalibrationRecord, error)
 	getOrganizationIDForResFn  func(ctx context.Context, resultID uuid.UUID) (uuid.UUID, error)
 	listAuditLogFn             func(ctx context.Context, recordID uuid.UUID) ([]storage.AuditEntry, error)
+	listAllFacilitiesFn        func(ctx context.Context) ([]storage.Facility, error)
+	listFacilityExceedancesFn  func(ctx context.Context, facilityID uuid.UUID) ([]storage.Exceedance, error)
+	createAlertFn              func(ctx context.Context, p storage.CreateAlertParams) (storage.Alert, bool, error)
+	listAlertsFn               func(ctx context.Context, f storage.AlertFilter) ([]storage.Alert, error)
+	getAlertFn                 func(ctx context.Context, id uuid.UUID) (storage.Alert, error)
+	dismissAlertFn             func(ctx context.Context, id, userID uuid.UUID) (storage.Alert, error)
 }
 
 func (m *mockStore) GetUserByEmail(ctx context.Context, email string) (storage.User, error) {
@@ -199,6 +205,48 @@ func (m *mockStore) ListAuditLog(ctx context.Context, recordID uuid.UUID) ([]sto
 		return m.listAuditLogFn(ctx, recordID)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) ListAllFacilities(ctx context.Context) ([]storage.Facility, error) {
+	if m.listAllFacilitiesFn != nil {
+		return m.listAllFacilitiesFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListFacilityExceedances(ctx context.Context, facilityID uuid.UUID) ([]storage.Exceedance, error) {
+	if m.listFacilityExceedancesFn != nil {
+		return m.listFacilityExceedancesFn(ctx, facilityID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CreateAlert(ctx context.Context, p storage.CreateAlertParams) (storage.Alert, bool, error) {
+	if m.createAlertFn != nil {
+		return m.createAlertFn(ctx, p)
+	}
+	return storage.Alert{}, false, nil
+}
+
+func (m *mockStore) ListAlerts(ctx context.Context, f storage.AlertFilter) ([]storage.Alert, error) {
+	if m.listAlertsFn != nil {
+		return m.listAlertsFn(ctx, f)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetAlert(ctx context.Context, id uuid.UUID) (storage.Alert, error) {
+	if m.getAlertFn != nil {
+		return m.getAlertFn(ctx, id)
+	}
+	return storage.Alert{}, pgx.ErrNoRows
+}
+
+func (m *mockStore) DismissAlert(ctx context.Context, id, userID uuid.UUID) (storage.Alert, error) {
+	if m.dismissAlertFn != nil {
+		return m.dismissAlertFn(ctx, id, userID)
+	}
+	return storage.Alert{}, pgx.ErrNoRows
 }
 
 // =========================================================================
