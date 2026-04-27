@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -44,7 +44,7 @@ const NAV: { key: Tab; label: string; icon: typeof Activity }[] = [
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(getUser);
-  const [facilityId, setFacilityId] = useState<string | null>(null);
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
 
   const { data: facilities } = useQuery({
@@ -53,12 +53,9 @@ function App() {
     enabled: !!user,
   });
 
-  // Auto-select first facility once loaded
-  useEffect(() => {
-    if (!facilityId && facilities && facilities.length > 0) {
-      setFacilityId(facilities[0].id);
-    }
-  }, [facilities, facilityId]);
+  // Default to the first facility until the user picks one explicitly. Derived
+  // (not stored) so we don't need an effect to keep state in sync with the query.
+  const facilityId = selectedFacilityId ?? facilities?.[0]?.id ?? null;
 
   const { data: activeAlerts } = useQuery({
     queryKey: ["alerts", { facility_id: facilityId ?? "", dismissed: false }],
@@ -90,7 +87,7 @@ function App() {
           user={user}
           facilities={facilities ?? []}
           currentFacility={currentFacility}
-          onSelectFacility={setFacilityId}
+          onSelectFacility={setSelectedFacilityId}
           alertCount={alertCount}
           onLogout={handleLogout}
           onOpenAlerts={() => setTab("alerts")}
