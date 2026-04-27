@@ -5,12 +5,13 @@ import (
 
 	"github.com/carlos-loya/water-quality-data-management/internal/events"
 	"github.com/carlos-loya/water-quality-data-management/internal/storage"
+	"github.com/carlos-loya/water-quality-data-management/internal/storage/blob"
 )
 
 // NewRouter creates the HTTP handler with all routes.
-func NewRouter(store storage.Store, bus *events.Bus, jwtSecret string) http.Handler {
+func NewRouter(store storage.Store, bus *events.Bus, blobs blob.Store, jwtSecret string) http.Handler {
 	mux := http.NewServeMux()
-	h := &handler{store: store, bus: bus, jwtSecret: jwtSecret}
+	h := &handler{store: store, bus: bus, blobs: blobs, jwtSecret: jwtSecret}
 
 	// Public routes
 	mux.HandleFunc("GET /api/v1/health", h.health)
@@ -38,6 +39,16 @@ func NewRouter(store storage.Store, bus *events.Bus, jwtSecret string) http.Hand
 	protected.HandleFunc("GET /api/v1/audit-log/{record_id}", h.listAuditLog)
 	protected.HandleFunc("GET /api/v1/alerts", h.listAlerts)
 	protected.HandleFunc("POST /api/v1/alerts/{id}/dismiss", requireAnyRole([]string{"admin", "operator", "reviewer"}, h.dismissAlert))
+
+	// Attachments
+	protected.HandleFunc("GET /api/v1/sample-results/{id}/attachments", h.listAttachments)
+	protected.HandleFunc("POST /api/v1/sample-results/{id}/attachments", requireAnyRole([]string{"admin", "operator"}, h.uploadAttachment))
+	protected.HandleFunc("GET /api/v1/attachments/{id}", h.downloadAttachment)
+	protected.HandleFunc("DELETE /api/v1/attachments/{id}", requireAnyRole([]string{"admin", "reviewer"}, h.deleteAttachment))
+
+	// Comments
+	protected.HandleFunc("GET /api/v1/sample-results/{id}/comments", h.listComments)
+	protected.HandleFunc("POST /api/v1/sample-results/{id}/comments", h.createComment)
 
 	mux.Handle("/api/v1/", withAuth(jwtSecret, protected))
 

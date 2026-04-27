@@ -340,7 +340,7 @@ func TestDismissAlert_AlreadyDismissed_409(t *testing.T) {
 func TestDismissAlert_ViewerForbidden_ViaRouter(t *testing.T) {
 	alertID := uuid.New()
 	store := &mockStore{} // not expected to be called
-	router := NewRouter(store, nil, testSecret)
+	router := NewRouter(store, nil, nil, testSecret)
 
 	token := makeToken(t, []auth.RoleClaim{{Role: "viewer"}})
 	req := httptest.NewRequest("POST", "/api/v1/alerts/"+alertID.String()+"/dismiss", nil)
@@ -364,7 +364,7 @@ func TestDismissAlert_OperatorAllowed_ViaRouter(t *testing.T) {
 			return storage.Alert{ID: id, FacilityID: facID, DismissedBy: &userID}, nil
 		},
 	}
-	router := NewRouter(store, nil, testSecret)
+	router := NewRouter(store, nil, nil, testSecret)
 
 	token := makeToken(t, []auth.RoleClaim{{Role: "operator", FacilityID: facID.String()}})
 	req := httptest.NewRequest("POST", "/api/v1/alerts/"+alertID.String()+"/dismiss", nil)

@@ -6,6 +6,7 @@ import { type AuthUser, canReview, canApprove, hasAnyRole } from "../api/auth";
 import { StatusBadge } from "./StatusBadge";
 import { AuditPanel } from "./AuditPanel";
 import { SampleResultForm } from "./SampleResultForm";
+import { SampleResultDetails } from "./SampleResultDetails";
 
 interface Props {
   facilityId: string;
@@ -17,6 +18,7 @@ export function SampleResultsTable({ facilityId, orgId, user }: Props) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [auditResultId, setAuditResultId] = useState<string | null>(null);
+  const [detailsResultId, setDetailsResultId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -200,6 +202,12 @@ export function SampleResultsTable({ facilityId, orgId, user }: Props) {
                         </button>
                       )}
                       <button
+                        onClick={() => setDetailsResultId(r.id)}
+                        className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
+                      >
+                        Details
+                      </button>
+                      <button
                         onClick={() => setAuditResultId(r.id)}
                         className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
                       >
@@ -228,6 +236,14 @@ export function SampleResultsTable({ facilityId, orgId, user }: Props) {
         <AuditPanel
           recordId={auditResultId}
           onClose={() => setAuditResultId(null)}
+        />
+      )}
+
+      {detailsResultId && (
+        <SampleResultDetails
+          sampleResultId={detailsResultId}
+          user={user}
+          onClose={() => setDetailsResultId(null)}
         />
       )}
     </div>

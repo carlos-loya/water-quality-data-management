@@ -13,6 +13,8 @@ import type {
   AuditEntry,
   Alert,
   AlertFilter,
+  Attachment,
+  Comment,
 } from "./types";
 
 import { getToken, clearAuth } from "./auth";
@@ -136,5 +138,62 @@ export const api = {
 
   dismissAlert(id: string) {
     return post<Alert>(`/alerts/${id}/dismiss`, {});
+  },
+
+  listAttachments(sampleResultId: string) {
+    return get<Attachment[]>(`/sample-results/${sampleResultId}/attachments`);
+  },
+
+  async uploadAttachment(sampleResultId: string, file: File): Promise<Attachment> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/sample-results/${sampleResultId}/attachments`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: form,
+    });
+    return handleResponse<Attachment>(res);
+  },
+
+  attachmentDownloadURL(id: string): string {
+    return `${BASE}/attachments/${id}`;
+  },
+
+  async downloadAttachment(id: string): Promise<Blob> {
+    const res = await fetch(`${BASE}/attachments/${id}`, { headers: authHeaders() });
+    if (res.status === 401) {
+      clearAuth();
+      window.location.reload();
+      throw new Error("session expired");
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    return res.blob();
+  },
+
+  async deleteAttachment(id: string): Promise<void> {
+    const res = await fetch(`${BASE}/attachments/${id}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    if (res.status === 401) {
+      clearAuth();
+      window.location.reload();
+      throw new Error("session expired");
+    }
+    if (!res.ok && res.status !== 204) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+  },
+
+  listComments(sampleResultId: string) {
+    return get<Comment[]>(`/sample-results/${sampleResultId}/comments`);
+  },
+
+  createComment(sampleResultId: string, body: string) {
+    return post<Comment>(`/sample-results/${sampleResultId}/comments`, { body });
   },
 };

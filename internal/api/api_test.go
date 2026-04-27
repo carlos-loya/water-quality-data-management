@@ -53,6 +53,13 @@ type mockStore struct {
 	listAlertsFn               func(ctx context.Context, f storage.AlertFilter) ([]storage.Alert, error)
 	getAlertFn                 func(ctx context.Context, id uuid.UUID) (storage.Alert, error)
 	dismissAlertFn             func(ctx context.Context, id, userID uuid.UUID) (storage.Alert, error)
+	createAttachmentFn         func(ctx context.Context, p storage.CreateAttachmentParams) (storage.Attachment, error)
+	listAttachmentsFn          func(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]storage.Attachment, error)
+	getAttachmentFn            func(ctx context.Context, id uuid.UUID) (storage.Attachment, error)
+	softDeleteAttachmentFn     func(ctx context.Context, id, userID uuid.UUID) (storage.Attachment, error)
+	createCommentFn            func(ctx context.Context, p storage.CreateCommentParams) (storage.Comment, error)
+	listCommentsFn             func(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]storage.Comment, error)
+	getFacilityIDForLocationFn func(ctx context.Context, locationID uuid.UUID) (uuid.UUID, error)
 }
 
 func (m *mockStore) GetUserByEmail(ctx context.Context, email string) (storage.User, error) {
@@ -69,7 +76,10 @@ func (m *mockStore) GetUserRoles(ctx context.Context, userID uuid.UUID) ([]stora
 	return nil, nil
 }
 
-func (m *mockStore) GetFacilityIDForLocation(context.Context, uuid.UUID) (uuid.UUID, error) {
+func (m *mockStore) GetFacilityIDForLocation(ctx context.Context, locationID uuid.UUID) (uuid.UUID, error) {
+	if m.getFacilityIDForLocationFn != nil {
+		return m.getFacilityIDForLocationFn(ctx, locationID)
+	}
 	return uuid.Nil, nil
 }
 
@@ -247,6 +257,48 @@ func (m *mockStore) DismissAlert(ctx context.Context, id, userID uuid.UUID) (sto
 		return m.dismissAlertFn(ctx, id, userID)
 	}
 	return storage.Alert{}, pgx.ErrNoRows
+}
+
+func (m *mockStore) CreateAttachment(ctx context.Context, p storage.CreateAttachmentParams) (storage.Attachment, error) {
+	if m.createAttachmentFn != nil {
+		return m.createAttachmentFn(ctx, p)
+	}
+	return storage.Attachment{}, nil
+}
+
+func (m *mockStore) ListAttachments(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]storage.Attachment, error) {
+	if m.listAttachmentsFn != nil {
+		return m.listAttachmentsFn(ctx, subjectType, subjectID)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetAttachment(ctx context.Context, id uuid.UUID) (storage.Attachment, error) {
+	if m.getAttachmentFn != nil {
+		return m.getAttachmentFn(ctx, id)
+	}
+	return storage.Attachment{}, pgx.ErrNoRows
+}
+
+func (m *mockStore) SoftDeleteAttachment(ctx context.Context, id, userID uuid.UUID) (storage.Attachment, error) {
+	if m.softDeleteAttachmentFn != nil {
+		return m.softDeleteAttachmentFn(ctx, id, userID)
+	}
+	return storage.Attachment{}, pgx.ErrNoRows
+}
+
+func (m *mockStore) CreateComment(ctx context.Context, p storage.CreateCommentParams) (storage.Comment, error) {
+	if m.createCommentFn != nil {
+		return m.createCommentFn(ctx, p)
+	}
+	return storage.Comment{}, nil
+}
+
+func (m *mockStore) ListComments(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]storage.Comment, error) {
+	if m.listCommentsFn != nil {
+		return m.listCommentsFn(ctx, subjectType, subjectID)
+	}
+	return nil, nil
 }
 
 // =========================================================================

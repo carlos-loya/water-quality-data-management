@@ -152,6 +152,7 @@ type SampleResult struct {
 	Source               string     `json:"source"`
 	SourceReference      *string    `json:"source_reference,omitempty"`
 	Notes                *string    `json:"notes,omitempty"`
+	OverrideReason       *string    `json:"override_reason,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -300,7 +301,7 @@ func (q *Queries) ListSampleResults(ctx context.Context, f SampleResultFilter) (
 		SELECT id, monitoring_location_id, parameter_id, method_id, unit_id,
 		       collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
 		       status, entered_by, entered_at, reviewed_by, reviewed_at,
-		       approved_by, approved_at, source, source_reference, notes,
+		       approved_by, approved_at, source, source_reference, notes, override_reason,
 		       created_at, updated_at
 		FROM sample_results
 		WHERE 1=1`
@@ -364,6 +365,7 @@ type CreateSampleResultParams struct {
 	Source               string     `json:"source"`
 	SourceReference      *string    `json:"source_reference,omitempty"`
 	Notes                *string    `json:"notes,omitempty"`
+	OverrideReason       *string    `json:"override_reason,omitempty"`
 }
 
 // CreateSampleResult inserts a new sample result and returns it.
@@ -378,26 +380,26 @@ func (q *Queries) CreateSampleResult(ctx context.Context, p CreateSampleResultPa
 		INSERT INTO sample_results (
 			id, monitoring_location_id, parameter_id, method_id, unit_id,
 			collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
-			status, entered_by, source, source_reference, notes
+			status, entered_by, source, source_reference, notes, override_reason
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8, $9, $10,
-			'draft', $11, $12, $13, $14
+			'draft', $11, $12, $13, $14, $15
 		)
 		RETURNING id, monitoring_location_id, parameter_id, method_id, unit_id,
 		          collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
 		          status, entered_by, entered_at, reviewed_by, reviewed_at,
-		          approved_by, approved_at, source, source_reference, notes,
+		          approved_by, approved_at, source, source_reference, notes, override_reason,
 		          created_at, updated_at`,
 		id, p.MonitoringLocationID, p.ParameterID, p.MethodID, p.UnitID,
 		p.CollectedAt, p.AnalyzedAt, p.ResultValue, p.ResultQualifier, p.DetectionLimit,
-		p.EnteredBy, p.Source, p.SourceReference, p.Notes,
+		p.EnteredBy, p.Source, p.SourceReference, p.Notes, p.OverrideReason,
 	).Scan(
 		&result.ID, &result.MonitoringLocationID, &result.ParameterID, &result.MethodID, &result.UnitID,
 		&result.CollectedAt, &result.AnalyzedAt, &result.ResultValue, &result.ResultQualifier, &result.DetectionLimit,
 		&result.Status, &result.EnteredBy, &result.EnteredAt, &result.ReviewedBy, &result.ReviewedAt,
 		&result.ApprovedBy, &result.ApprovedAt, &result.Source, &result.SourceReference, &result.Notes,
-		&result.CreatedAt, &result.UpdatedAt,
+		&result.OverrideReason, &result.CreatedAt, &result.UpdatedAt,
 	)
 	return result, err
 }
@@ -439,7 +441,7 @@ func (q *Queries) GetSampleResult(ctx context.Context, id uuid.UUID) (SampleResu
 		SELECT id, monitoring_location_id, parameter_id, method_id, unit_id,
 		       collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
 		       status, entered_by, entered_at, reviewed_by, reviewed_at,
-		       approved_by, approved_at, source, source_reference, notes,
+		       approved_by, approved_at, source, source_reference, notes, override_reason,
 		       created_at, updated_at
 		FROM sample_results
 		WHERE id = $1`, id)
@@ -458,7 +460,7 @@ func (q *Queries) ReviewSampleResult(ctx context.Context, id uuid.UUID, reviewer
 		RETURNING id, monitoring_location_id, parameter_id, method_id, unit_id,
 		          collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
 		          status, entered_by, entered_at, reviewed_by, reviewed_at,
-		          approved_by, approved_at, source, source_reference, notes,
+		          approved_by, approved_at, source, source_reference, notes, override_reason,
 		          created_at, updated_at`, id, reviewerID)
 	if err != nil {
 		return SampleResult{}, err
@@ -475,7 +477,7 @@ func (q *Queries) ApproveSampleResult(ctx context.Context, id uuid.UUID, approve
 		RETURNING id, monitoring_location_id, parameter_id, method_id, unit_id,
 		          collected_at, analyzed_at, result_value, result_qualifier, detection_limit,
 		          status, entered_by, entered_at, reviewed_by, reviewed_at,
-		          approved_by, approved_at, source, source_reference, notes,
+		          approved_by, approved_at, source, source_reference, notes, override_reason,
 		          created_at, updated_at`, id, approverID)
 	if err != nil {
 		return SampleResult{}, err
@@ -983,3 +985,160 @@ func (q *Queries) DismissAlert(ctx context.Context, id, userID uuid.UUID) (Alert
 	)
 	return a, err
 }
+
+// Attachment represents a file attached to a sample result (or other subject).
+type Attachment struct {
+	ID             uuid.UUID  `json:"id"`
+	OrganizationID uuid.UUID  `json:"organization_id"`
+	SubjectType    string     `json:"subject_type"`
+	SubjectID      uuid.UUID  `json:"subject_id"`
+	Filename       string     `json:"filename"`
+	ContentType    string     `json:"content_type"`
+	SizeBytes      int64      `json:"size_bytes"`
+	StorageKey     string     `json:"storage_key"`
+	UploadedBy     uuid.UUID  `json:"uploaded_by"`
+	UploadedAt     time.Time  `json:"uploaded_at"`
+	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
+	DeletedBy      *uuid.UUID `json:"deleted_by,omitempty"`
+}
+
+// CreateAttachmentParams contains the metadata saved alongside the blob.
+type CreateAttachmentParams struct {
+	OrganizationID uuid.UUID
+	SubjectType    string
+	SubjectID      uuid.UUID
+	Filename       string
+	ContentType    string
+	SizeBytes      int64
+	StorageKey     string
+	UploadedBy     uuid.UUID
+}
+
+// CreateAttachment persists attachment metadata. The blob itself must be
+// written to the object store separately.
+func (q *Queries) CreateAttachment(ctx context.Context, p CreateAttachmentParams) (Attachment, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return Attachment{}, fmt.Errorf("generate uuid: %w", err)
+	}
+	var a Attachment
+	err = q.pool.QueryRow(ctx, `
+		INSERT INTO attachments (
+			id, organization_id, subject_type, subject_id,
+			filename, content_type, size_bytes, storage_key, uploaded_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, organization_id, subject_type, subject_id,
+		          filename, content_type, size_bytes, storage_key,
+		          uploaded_by, uploaded_at, deleted_at, deleted_by`,
+		id, p.OrganizationID, p.SubjectType, p.SubjectID,
+		p.Filename, p.ContentType, p.SizeBytes, p.StorageKey, p.UploadedBy,
+	).Scan(
+		&a.ID, &a.OrganizationID, &a.SubjectType, &a.SubjectID,
+		&a.Filename, &a.ContentType, &a.SizeBytes, &a.StorageKey,
+		&a.UploadedBy, &a.UploadedAt, &a.DeletedAt, &a.DeletedBy,
+	)
+	return a, err
+}
+
+// ListAttachments returns non-deleted attachments for a subject.
+func (q *Queries) ListAttachments(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]Attachment, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, organization_id, subject_type, subject_id,
+		       filename, content_type, size_bytes, storage_key,
+		       uploaded_by, uploaded_at, deleted_at, deleted_by
+		FROM attachments
+		WHERE subject_type = $1 AND subject_id = $2 AND deleted_at IS NULL
+		ORDER BY uploaded_at DESC`, subjectType, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Attachment])
+}
+
+// GetAttachment returns an attachment by id regardless of deleted state;
+// handlers check deleted_at and decide how to respond.
+func (q *Queries) GetAttachment(ctx context.Context, id uuid.UUID) (Attachment, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, organization_id, subject_type, subject_id,
+		       filename, content_type, size_bytes, storage_key,
+		       uploaded_by, uploaded_at, deleted_at, deleted_by
+		FROM attachments
+		WHERE id = $1`, id)
+	if err != nil {
+		return Attachment{}, err
+	}
+	return pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Attachment])
+}
+
+// SoftDeleteAttachment marks an attachment deleted. Returns an error if the
+// row was already deleted so callers can return 409.
+func (q *Queries) SoftDeleteAttachment(ctx context.Context, id, userID uuid.UUID) (Attachment, error) {
+	var a Attachment
+	err := q.pool.QueryRow(ctx, `
+		UPDATE attachments
+		SET deleted_at = now(), deleted_by = $2
+		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING id, organization_id, subject_type, subject_id,
+		          filename, content_type, size_bytes, storage_key,
+		          uploaded_by, uploaded_at, deleted_at, deleted_by`,
+		id, userID,
+	).Scan(
+		&a.ID, &a.OrganizationID, &a.SubjectType, &a.SubjectID,
+		&a.Filename, &a.ContentType, &a.SizeBytes, &a.StorageKey,
+		&a.UploadedBy, &a.UploadedAt, &a.DeletedAt, &a.DeletedBy,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return a, fmt.Errorf("attachment not found or already deleted")
+	}
+	return a, err
+}
+
+// Comment represents a free-text note attached to a sample result.
+type Comment struct {
+	ID             uuid.UUID `json:"id"`
+	OrganizationID uuid.UUID `json:"organization_id"`
+	SubjectType    string    `json:"subject_type"`
+	SubjectID      uuid.UUID `json:"subject_id"`
+	AuthorID       uuid.UUID `json:"author_id"`
+	Body           string    `json:"body"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// CreateCommentParams contains the fields to insert a new comment.
+type CreateCommentParams struct {
+	OrganizationID uuid.UUID
+	SubjectType    string
+	SubjectID      uuid.UUID
+	AuthorID       uuid.UUID
+	Body           string
+}
+
+// CreateComment appends a comment to a subject.
+func (q *Queries) CreateComment(ctx context.Context, p CreateCommentParams) (Comment, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return Comment{}, fmt.Errorf("generate uuid: %w", err)
+	}
+	var c Comment
+	err = q.pool.QueryRow(ctx, `
+		INSERT INTO comments (id, organization_id, subject_type, subject_id, author_id, body)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, organization_id, subject_type, subject_id, author_id, body, created_at`,
+		id, p.OrganizationID, p.SubjectType, p.SubjectID, p.AuthorID, p.Body,
+	).Scan(&c.ID, &c.OrganizationID, &c.SubjectType, &c.SubjectID, &c.AuthorID, &c.Body, &c.CreatedAt)
+	return c, err
+}
+
+// ListComments returns comments for a subject, newest first.
+func (q *Queries) ListComments(ctx context.Context, subjectType string, subjectID uuid.UUID) ([]Comment, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, organization_id, subject_type, subject_id, author_id, body, created_at
+		FROM comments
+		WHERE subject_type = $1 AND subject_id = $2
+		ORDER BY created_at DESC`, subjectType, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Comment])
+}
+
