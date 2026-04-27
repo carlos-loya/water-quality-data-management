@@ -98,6 +98,9 @@ func (m *mockStore) EvaluateCompliance(context.Context, uuid.UUID) ([]storage.Co
 func (m *mockStore) GetTrendingData(context.Context, uuid.UUID, int) ([]storage.TrendingSeries, error) {
 	panic("not implemented")
 }
+func (m *mockStore) GetFacilityOverview(context.Context, uuid.UUID) (storage.FacilityOverview, error) {
+	panic("not implemented")
+}
 func (m *mockStore) ListInstruments(context.Context, uuid.UUID) ([]storage.Instrument, error) {
 	panic("not implemented")
 }

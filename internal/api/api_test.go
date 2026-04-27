@@ -43,6 +43,7 @@ type mockStore struct {
 	approveSampleResultFn      func(ctx context.Context, id, approverID uuid.UUID) (storage.SampleResult, error)
 	evaluateComplianceFn       func(ctx context.Context, facilityID uuid.UUID) ([]storage.ComplianceResult, error)
 	getTrendingDataFn          func(ctx context.Context, facilityID uuid.UUID, days int) ([]storage.TrendingSeries, error)
+	getFacilityOverviewFn      func(ctx context.Context, facilityID uuid.UUID) (storage.FacilityOverview, error)
 	listInstrumentStatusesFn   func(ctx context.Context, facilityID uuid.UUID) ([]storage.InstrumentStatus, error)
 	listCalibrationRecordsFn   func(ctx context.Context, instrumentID uuid.UUID) ([]storage.CalibrationRecord, error)
 	getOrganizationIDForResFn  func(ctx context.Context, resultID uuid.UUID) (uuid.UUID, error)
@@ -176,6 +177,13 @@ func (m *mockStore) EvaluateCompliance(ctx context.Context, facilityID uuid.UUID
 		return m.evaluateComplianceFn(ctx, facilityID)
 	}
 	return nil, nil
+}
+
+func (m *mockStore) GetFacilityOverview(ctx context.Context, facilityID uuid.UUID) (storage.FacilityOverview, error) {
+	if m.getFacilityOverviewFn != nil {
+		return m.getFacilityOverviewFn(ctx, facilityID)
+	}
+	return storage.FacilityOverview{}, nil
 }
 
 func (m *mockStore) GetTrendingData(ctx context.Context, facilityID uuid.UUID, days int) ([]storage.TrendingSeries, error) {
@@ -1413,6 +1421,82 @@ func TestGetTrendingDaysZero(t *testing.T) {
 	h.getTrending(w, req)
 	if capturedDays != 30 {
 		t.Errorf("days=0 should default to 30, got %d", capturedDays)
+	}
+}
+
+// =========================================================================
+// 14b. GetFacilityOverview handler
+// =========================================================================
+
+func TestGetFacilityOverviewValid(t *testing.T) {
+	want := storage.FacilityOverview{
+		SamplesLast7d:   12,
+		SamplesLast30d:  47,
+		PendingReview:   3,
+		PendingApproval: 1,
+	}
+	m := &mockStore{
+		getFacilityOverviewFn: func(_ context.Context, _ uuid.UUID) (storage.FacilityOverview, error) {
+			return want, nil
+		},
+	}
+	h := &handler{store: m}
+	req := withAuthCtx(httptest.NewRequest("GET", "/test", nil), []auth.RoleClaim{{Role: "admin"}})
+	req.SetPathValue("facility_id", uuid.New().String())
+	w := httptest.NewRecorder()
+	h.getFacilityOverview(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var got storage.FacilityOverview
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.SamplesLast7d != want.SamplesLast7d || got.PendingReview != want.PendingReview {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+	// Verify nil slices are serialized as [] (so the frontend doesn't get null)
+	if got.SamplesByDay == nil || got.RecentResults == nil {
+		t.Errorf("expected empty slices, got nil — body=%s", w.Body.String())
+	}
+}
+
+func TestGetFacilityOverviewInvalidFacilityID(t *testing.T) {
+	h := &handler{store: &mockStore{}}
+	req := withAuthCtx(httptest.NewRequest("GET", "/test", nil), []auth.RoleClaim{{Role: "admin"}})
+	req.SetPathValue("facility_id", "not-a-uuid")
+	w := httptest.NewRecorder()
+	h.getFacilityOverview(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestGetFacilityOverviewNoAccess(t *testing.T) {
+	h := &handler{store: &mockStore{}}
+	req := withAuthCtx(httptest.NewRequest("GET", "/test", nil),
+		[]auth.RoleClaim{{Role: "operator", FacilityID: uuid.New().String()}})
+	req.SetPathValue("facility_id", uuid.New().String())
+	w := httptest.NewRecorder()
+	h.getFacilityOverview(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+func TestGetFacilityOverviewStoreError(t *testing.T) {
+	m := &mockStore{
+		getFacilityOverviewFn: func(_ context.Context, _ uuid.UUID) (storage.FacilityOverview, error) {
+			return storage.FacilityOverview{}, fmt.Errorf("db down")
+		},
+	}
+	h := &handler{store: m}
+	req := withAuthCtx(httptest.NewRequest("GET", "/test", nil), []auth.RoleClaim{{Role: "admin"}})
+	req.SetPathValue("facility_id", uuid.New().String())
+	w := httptest.NewRecorder()
+	h.getFacilityOverview(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 }
 

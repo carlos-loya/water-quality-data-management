@@ -10,6 +10,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
+import { TrendingUp } from "lucide-react";
 import { api } from "../api/client";
 import type { TrendingSeries } from "../api/types";
 
@@ -43,29 +44,29 @@ function SeriesChart({ series }: { series: TrendingSeries }) {
 
   if (data.length === 0) {
     return (
-      <div className="py-6 text-center text-sm text-gray-400">
-        No numeric data points
+      <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 shadow-sm">
+        No numeric data points for {series.parameter_name} at {series.location_name}
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-baseline justify-between">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">
+          <h3 className="text-sm font-semibold text-slate-900">
             {series.parameter_name}
           </h3>
-          <p className="text-xs text-gray-500">
-            {series.location_name} &middot; {series.unit_code}
+          <p className="text-xs text-slate-500">
+            {series.location_name} · {series.unit_code}
           </p>
         </div>
         {series.limits?.length > 0 && (
-          <div className="flex gap-3">
+          <div className="flex flex-wrap justify-end gap-x-3 gap-y-1">
             {series.limits.map((l) => (
               <span
                 key={l.limit_type}
-                className="flex items-center gap-1 text-xs text-gray-500"
+                className="flex items-center gap-1.5 text-xs text-slate-600"
               >
                 <span
                   className="inline-block h-2 w-2 rounded-full"
@@ -79,24 +80,25 @@ function SeriesChart({ series }: { series: TrendingSeries }) {
           </div>
         )}
       </div>
-      <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={data} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis
             dataKey="date"
-            tick={{ fontSize: 11 }}
-            stroke="#9ca3af"
+            tick={{ fontSize: 11, fill: "#64748b" }}
+            stroke="#cbd5e1"
           />
           <YAxis
-            tick={{ fontSize: 11 }}
-            stroke="#9ca3af"
+            tick={{ fontSize: 11, fill: "#64748b" }}
+            stroke="#cbd5e1"
             width={50}
           />
           <Tooltip
             contentStyle={{
               fontSize: 12,
               borderRadius: 8,
-              border: "1px solid #e5e7eb",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)",
             }}
             formatter={(value) => [
               `${value} ${series.unit_code}`,
@@ -106,9 +108,9 @@ function SeriesChart({ series }: { series: TrendingSeries }) {
           <Line
             type="monotone"
             dataKey="value"
-            stroke="#3b82f6"
+            stroke="#2563eb"
             strokeWidth={2}
-            dot={{ r: 3, fill: "#3b82f6" }}
+            dot={{ r: 3, fill: "#2563eb" }}
             activeDot={{ r: 5 }}
           />
           {(series.limits ?? []).map((l) => (
@@ -135,15 +137,16 @@ export function TrendingCharts({ facilityId }: Props) {
   });
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">
-          Parameter Trends
-        </h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <TrendingUp className="h-4 w-4 text-slate-400" />
+          {seriesList?.length ?? 0} parameter series
+        </div>
         <select
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
           <option value={7}>Last 7 days</option>
           <option value={30}>Last 30 days</option>
@@ -153,9 +156,11 @@ export function TrendingCharts({ facilityId }: Props) {
       </div>
 
       {isLoading ? (
-        <div className="py-8 text-center text-sm text-gray-500">Loading...</div>
+        <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-sm text-slate-500 shadow-sm">
+          Loading...
+        </div>
       ) : seriesList?.length === 0 ? (
-        <div className="py-8 text-center text-sm text-gray-400">
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center text-sm text-slate-400">
           No trending data for this period
         </div>
       ) : (

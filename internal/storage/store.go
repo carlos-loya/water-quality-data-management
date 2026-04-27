@@ -27,6 +27,7 @@ type Store interface {
 	ApproveSampleResult(ctx context.Context, id uuid.UUID, approverID uuid.UUID) (SampleResult, error)
 	EvaluateCompliance(ctx context.Context, facilityID uuid.UUID) ([]ComplianceResult, error)
 	GetTrendingData(ctx context.Context, facilityID uuid.UUID, days int) ([]TrendingSeries, error)
+	GetFacilityOverview(ctx context.Context, facilityID uuid.UUID) (FacilityOverview, error)
 	ListInstruments(ctx context.Context, facilityID uuid.UUID) ([]Instrument, error)
 	ListCalibrationRecords(ctx context.Context, instrumentID uuid.UUID) ([]CalibrationRecord, error)
 	ListInstrumentStatuses(ctx context.Context, facilityID uuid.UUID) ([]InstrumentStatus, error)

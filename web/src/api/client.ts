@@ -15,6 +15,7 @@ import type {
   AlertFilter,
   Attachment,
   Comment,
+  FacilityOverview,
 } from "./types";
 
 import { getToken, clearAuth } from "./auth";
@@ -42,6 +43,20 @@ async function handleResponse<T>(res: Response): Promise<T> {
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
   return handleResponse<T>(res);
+}
+
+async function getBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
+  if (res.status === 401) {
+    clearAuth();
+    window.location.reload();
+    throw new Error("session expired");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.blob();
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -96,6 +111,10 @@ export const api = {
 
   evaluateCompliance(facilityId: string) {
     return get<ComplianceResult[]>(`/facilities/${facilityId}/compliance`);
+  },
+
+  getFacilityOverview(facilityId: string) {
+    return get<FacilityOverview>(`/facilities/${facilityId}/overview`);
   },
 
   getTrending(facilityId: string, days = 30) {
@@ -159,18 +178,12 @@ export const api = {
     return `${BASE}/attachments/${id}`;
   },
 
-  async downloadAttachment(id: string): Promise<Blob> {
-    const res = await fetch(`${BASE}/attachments/${id}`, { headers: authHeaders() });
-    if (res.status === 401) {
-      clearAuth();
-      window.location.reload();
-      throw new Error("session expired");
-    }
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `HTTP ${res.status}`);
-    }
-    return res.blob();
+  downloadAttachment(id: string): Promise<Blob> {
+    return getBlob(`/attachments/${id}`);
+  },
+
+  downloadComplianceReport(facilityId: string, ext: "xlsx" | "pdf"): Promise<Blob> {
+    return getBlob(`/facilities/${facilityId}/reports/compliance.${ext}`);
   },
 
   async deleteAttachment(id: string): Promise<void> {

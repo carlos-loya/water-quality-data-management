@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import { api } from "../api/client";
 
 interface Props {
@@ -13,30 +14,35 @@ export function AuditPanel({ recordId, onClose }: Props) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Audit History</h3>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Audit history</h3>
+            <p className="mt-0.5 font-mono text-xs text-slate-400">{recordId}</p>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
           >
-            &times;
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <p className="mb-4 font-mono text-xs text-gray-400">
-          {recordId}
-        </p>
-
         {isLoading ? (
-          <div className="py-4 text-center text-sm text-gray-500">Loading...</div>
+          <div className="py-8 text-center text-sm text-slate-500">Loading...</div>
         ) : entries?.length === 0 ? (
-          <div className="py-4 text-center text-sm text-gray-400">
+          <div className="py-8 text-center text-sm text-slate-400">
             No audit entries yet
           </div>
         ) : (
-          <div className="space-y-3">
+          <ol className="relative space-y-3 border-l border-slate-200 pl-4">
             {entries?.map((e) => {
               const oldStatus =
                 e.old_values && typeof e.old_values === "object"
@@ -48,34 +54,34 @@ export function AuditPanel({ recordId, onClose }: Props) {
                   : null;
 
               return (
-                <div
-                  key={e.id}
-                  className="rounded border border-gray-200 bg-gray-50 p-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-800">
-                      {e.action}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(e.changed_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    by{" "}
-                    <span className="font-mono">
-                      {e.changed_by.slice(0, 12)}...
-                    </span>
-                  </div>
-                  {(oldStatus != null || newStatus != null) && (
-                    <div className="mt-1 text-xs text-gray-600">
-                      {oldStatus ? `${oldStatus}` : "(new)"} &rarr;{" "}
-                      <span className="font-medium">{String(newStatus)}</span>
+                <li key={e.id} className="relative">
+                  <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-blue-500 ring-1 ring-slate-200" />
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium capitalize text-slate-800">
+                        {e.action}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {new Date(e.changed_at).toLocaleString()}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      by{" "}
+                      <span className="font-mono">
+                        {e.changed_by.slice(0, 12)}...
+                      </span>
+                    </div>
+                    {(oldStatus != null || newStatus != null) && (
+                      <div className="mt-1 text-xs text-slate-700">
+                        {oldStatus ? `${oldStatus}` : "(new)"} →{" "}
+                        <span className="font-medium">{String(newStatus)}</span>
+                      </div>
+                    )}
+                  </div>
+                </li>
               );
             })}
-          </div>
+          </ol>
         )}
       </div>
     </div>
