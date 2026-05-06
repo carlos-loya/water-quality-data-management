@@ -224,3 +224,29 @@ export interface AlertFilter {
   dismissed?: boolean;
   limit?: number;
 }
+
+export interface SampleDayBucket {
+  day: string;
+  count: number;
+}
+
+export interface RecentSampleResult {
+  id: string;
+  collected_at: string;
+  status: "draft" | "reviewed" | "approved";
+  result_value: number | null;
+  result_qualifier?: string;
+  unit_code: string;
+  parameter_name: string;
+  parameter_code: string;
+  location_name: string;
+}
+
+export interface FacilityOverview {
+  samples_last_7d: number;
+  samples_last_30d: number;
+  pending_review: number;
+  pending_approval: number;
+  samples_by_day: SampleDayBucket[];
+  recent_results: RecentSampleResult[];
+}

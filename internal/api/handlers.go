@@ -509,6 +509,31 @@ func (h *handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entries)
 }
 
+func (h *handler) getFacilityOverview(w http.ResponseWriter, r *http.Request) {
+	facilityID, err := parseUUID(r.PathValue("facility_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid facility_id")
+		return
+	}
+	if !checkFacilityAccess(w, r, facilityID) {
+		return
+	}
+
+	overview, err := h.store.GetFacilityOverview(r.Context(), facilityID)
+	if err != nil {
+		slog.Error("get facility overview", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if overview.SamplesByDay == nil {
+		overview.SamplesByDay = []storage.SampleDayBucket{}
+	}
+	if overview.RecentResults == nil {
+		overview.RecentResults = []storage.RecentSampleResult{}
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
 func (h *handler) listInstrumentStatuses(w http.ResponseWriter, r *http.Request) {
 	facilityID, err := parseUUID(r.PathValue("facility_id"))
 	if err != nil {

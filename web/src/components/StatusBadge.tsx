@@ -1,17 +1,17 @@
 const styles: Record<string, string> = {
-  draft: "bg-yellow-100 text-yellow-800",
-  reviewed: "bg-blue-100 text-blue-800",
-  approved: "bg-green-100 text-green-800",
-  EXCEEDANCE: "bg-red-100 text-red-800",
-  OK: "bg-green-100 text-green-800",
-  "N/A": "bg-gray-100 text-gray-600",
+  draft: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  reviewed: "bg-blue-50 text-blue-700 ring-blue-600/20",
+  approved: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  EXCEEDANCE: "bg-red-50 text-red-700 ring-red-600/20",
+  OK: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  "N/A": "bg-slate-50 text-slate-600 ring-slate-500/20",
 };
 
 export function StatusBadge({ value }: { value: string }) {
-  const cls = styles[value] ?? "bg-gray-100 text-gray-800";
+  const cls = styles[value] ?? "bg-slate-50 text-slate-700 ring-slate-500/20";
   return (
     <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${cls}`}
     >
       {value}
     </span>

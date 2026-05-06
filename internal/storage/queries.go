@@ -1142,3 +1142,102 @@ func (q *Queries) ListComments(ctx context.Context, subjectType string, subjectI
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Comment])
 }
 
+// FacilityOverview is the aggregate dashboard payload for a single facility.
+type FacilityOverview struct {
+	SamplesLast7d   int                    `json:"samples_last_7d"`
+	SamplesLast30d  int                    `json:"samples_last_30d"`
+	PendingReview   int                    `json:"pending_review"`
+	PendingApproval int                    `json:"pending_approval"`
+	SamplesByDay    []SampleDayBucket      `json:"samples_by_day"`
+	RecentResults   []RecentSampleResult   `json:"recent_results"`
+}
+
+type SampleDayBucket struct {
+	Day   time.Time `json:"day"`
+	Count int       `json:"count"`
+}
+
+type RecentSampleResult struct {
+	ID              uuid.UUID `json:"id"`
+	CollectedAt     time.Time `json:"collected_at"`
+	Status          string    `json:"status"`
+	ResultValue     *float64  `json:"result_value"`
+	ResultQualifier *string   `json:"result_qualifier,omitempty"`
+	UnitCode        string    `json:"unit_code"`
+	ParameterName   string    `json:"parameter_name"`
+	ParameterCode   string    `json:"parameter_code"`
+	LocationName    string    `json:"location_name"`
+}
+
+// GetFacilityOverview returns aggregate KPIs and recent activity for the facility's dashboard.
+// All counts are scoped to sample_results whose monitoring_location belongs to the given facility.
+func (q *Queries) GetFacilityOverview(ctx context.Context, facilityID uuid.UUID) (FacilityOverview, error) {
+	var ov FacilityOverview
+
+	err := q.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE sr.collected_at >= NOW() - INTERVAL '7 days')  AS samples_last_7d,
+			COUNT(*) FILTER (WHERE sr.collected_at >= NOW() - INTERVAL '30 days') AS samples_last_30d,
+			COUNT(*) FILTER (WHERE sr.status = 'draft')                            AS pending_review,
+			COUNT(*) FILTER (WHERE sr.status = 'reviewed')                         AS pending_approval
+		FROM sample_results sr
+		JOIN monitoring_locations ml ON sr.monitoring_location_id = ml.id
+		WHERE ml.facility_id = $1`, facilityID,
+	).Scan(&ov.SamplesLast7d, &ov.SamplesLast30d, &ov.PendingReview, &ov.PendingApproval)
+	if err != nil {
+		return ov, fmt.Errorf("overview counts: %w", err)
+	}
+
+	dayRows, err := q.pool.Query(ctx, `
+		SELECT date_trunc('day', sr.collected_at)::date AS day, COUNT(*)::int
+		FROM sample_results sr
+		JOIN monitoring_locations ml ON sr.monitoring_location_id = ml.id
+		WHERE ml.facility_id = $1 AND sr.collected_at >= NOW() - INTERVAL '30 days'
+		GROUP BY day
+		ORDER BY day`, facilityID)
+	if err != nil {
+		return ov, fmt.Errorf("samples by day: %w", err)
+	}
+	defer dayRows.Close()
+	for dayRows.Next() {
+		var b SampleDayBucket
+		if err := dayRows.Scan(&b.Day, &b.Count); err != nil {
+			return ov, err
+		}
+		ov.SamplesByDay = append(ov.SamplesByDay, b)
+	}
+	if err := dayRows.Err(); err != nil {
+		return ov, err
+	}
+
+	recentRows, err := q.pool.Query(ctx, `
+		SELECT sr.id, sr.collected_at, sr.status, sr.result_value, sr.result_qualifier,
+		       u.code, p.name, p.code, ml.name
+		FROM sample_results sr
+		JOIN monitoring_locations ml ON sr.monitoring_location_id = ml.id
+		JOIN parameters p ON sr.parameter_id = p.id
+		JOIN units_of_measure u ON sr.unit_id = u.id
+		WHERE ml.facility_id = $1
+		ORDER BY sr.collected_at DESC
+		LIMIT 8`, facilityID)
+	if err != nil {
+		return ov, fmt.Errorf("recent results: %w", err)
+	}
+	defer recentRows.Close()
+	for recentRows.Next() {
+		var r RecentSampleResult
+		if err := recentRows.Scan(
+			&r.ID, &r.CollectedAt, &r.Status, &r.ResultValue, &r.ResultQualifier,
+			&r.UnitCode, &r.ParameterName, &r.ParameterCode, &r.LocationName,
+		); err != nil {
+			return ov, err
+		}
+		ov.RecentResults = append(ov.RecentResults, r)
+	}
+	if err := recentRows.Err(); err != nil {
+		return ov, err
+	}
+
+	return ov, nil
+}
+

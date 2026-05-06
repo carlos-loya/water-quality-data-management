@@ -30,6 +30,7 @@ func NewRouter(store storage.Store, bus *events.Bus, blobs blob.Store, jwtSecret
 	protected.HandleFunc("PATCH /api/v1/sample-results/{id}/review", requireAnyRole([]string{"admin", "reviewer"}, h.reviewSampleResult))
 	protected.HandleFunc("PATCH /api/v1/sample-results/{id}/approve", requireRole("admin", h.approveSampleResult))
 	protected.HandleFunc("POST /api/v1/organizations/{org_id}/sample-results/import", requireAnyRole([]string{"admin", "operator"}, h.importSampleResults))
+	protected.HandleFunc("GET /api/v1/facilities/{facility_id}/overview", h.getFacilityOverview)
 	protected.HandleFunc("GET /api/v1/facilities/{facility_id}/trending", h.getTrending)
 	protected.HandleFunc("GET /api/v1/facilities/{facility_id}/instruments", h.listInstrumentStatuses)
 	protected.HandleFunc("GET /api/v1/instruments/{instrument_id}/calibrations", h.listCalibrationRecords)
